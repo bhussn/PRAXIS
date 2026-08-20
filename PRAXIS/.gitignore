@@ -18,3 +18,12 @@ logs/
 # beside it.
 /.plugins/
 /.opencode-skills/
+
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
+.conda/
+conda-env/
