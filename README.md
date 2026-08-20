@@ -1,7 +1,5 @@
-
-  # IBIS web design
-
-  This is a code bundle for IBIS web design. 
+# Welcome!
+If you're downloading a local copy, do the following: 
 
   ## Running the code
 
