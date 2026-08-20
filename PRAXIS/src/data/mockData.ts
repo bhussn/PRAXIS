@@ -1,0 +1,210 @@
+// ============================================================
+// PRAXIS MOCK DATA
+// All data here will be replaced with real Supabase/API data.
+// ============================================================
+
+// AUTH: REPLACE THIS — comes from Supabase Auth + profiles table
+export const mockUser = {
+  id: "usr_01HXYZ1234",
+  name: "Baydan",
+  email: "baydan@university.edu",
+  avatarInitials: "B",
+};
+
+// DATABASE: REPLACE THIS — comes from profiles table
+export const mockProfile = {
+  userId: "usr_01HXYZ1234",
+  major: "Computer Science",
+  concerns:
+    "I'm worried about how AI will change entry-level software engineering jobs before I graduate. I want to understand what skills will still matter in 3 years.",
+};
+
+// DATABASE: REPLACE THIS — comes from user_careers table
+export const mockCareers = [
+  "Software Engineering",
+  "Cybersecurity",
+  "AI / Machine Learning",
+];
+
+// DATABASE: REPLACE THIS — comes from articles table
+export const mockArticles = [
+  {
+    id: "art_001",
+    title: "NVIDIA's New AI Chip Architecture Could Reshape the Entire Cloud Industry",
+    category: "AI",
+    source: "The Verge",
+    url: "https://theverge.com",
+    publishedAt: "August 19, 2025",
+    readingTime: "4 min read",
+    imageUrl:
+      "https://images.unsplash.com/photo-1518770660439-4636190af475?w=800&h=450&fit=crop&auto=format",
+    description:
+      "NVIDIA announced its next-generation Blackwell Ultra architecture, promising a 3x improvement in AI inference performance. Cloud providers like AWS and Google are already in talks to redesign their data center strategies.",
+    number: "01",
+  },
+  {
+    id: "art_002",
+    title: "The Fed Signals Two More Rate Cuts Before Year End — What That Means for Tech Hiring",
+    category: "Finance",
+    source: "Bloomberg",
+    url: "https://bloomberg.com",
+    publishedAt: "August 19, 2025",
+    readingTime: "3 min read",
+    imageUrl:
+      "https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=800&h=450&fit=crop&auto=format",
+    description:
+      "Federal Reserve Chair Powell indicated the central bank may cut rates twice before December, a signal that borrowing costs for startups and tech companies could ease significantly heading into 2026.",
+    number: "02",
+  },
+  {
+    id: "art_003",
+    title: "A Major Data Breach at a Top-5 US Bank Exposed 14 Million Customer Records",
+    category: "Cybersecurity",
+    source: "Wired",
+    url: "https://wired.com",
+    publishedAt: "August 19, 2025",
+    readingTime: "5 min read",
+    imageUrl:
+      "https://images.unsplash.com/photo-1563013544-824ae1b704d3?w=800&h=450&fit=crop&auto=format",
+    description:
+      "A sophisticated supply chain attack on a third-party vendor exposed the personal and financial records of millions of customers at one of the largest US banks. The breach has sparked urgent congressional debate around critical infrastructure cybersecurity standards.",
+    number: "03",
+  },
+  {
+    id: "art_004",
+    title: "OpenAI's o3 Model Passes Bar Exam, CPA Exam, and Medical Licensing in Same Week",
+    category: "AI",
+    source: "MIT Technology Review",
+    url: "https://technologyreview.com",
+    publishedAt: "August 18, 2025",
+    readingTime: "6 min read",
+    imageUrl:
+      "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=800&h=450&fit=crop&auto=format",
+    description:
+      "OpenAI's o3 model achieved passing scores on three major professional licensing exams in the same week, reigniting debate about AI's impact on knowledge work and professional careers across law, finance, and medicine.",
+    number: "04",
+  },
+  {
+    id: "art_005",
+    title: "Google Announces 12,000 Layoffs as AI Automation Replaces Entry-Level Engineering Roles",
+    category: "Technology",
+    source: "Reuters",
+    url: "https://reuters.com",
+    publishedAt: "August 18, 2025",
+    readingTime: "4 min read",
+    imageUrl:
+      "https://images.unsplash.com/photo-1573804633927-bfcbcd909acd?w=800&h=450&fit=crop&auto=format",
+    description:
+      "Alphabet announced it is reducing its workforce by roughly 10%, citing the productivity gains from internal AI coding assistants as reducing the need for junior software engineers across product teams.",
+    number: "05",
+  },
+  {
+    id: "art_006",
+    title: "Venture Capital Investment in Cybersecurity Hits Record $18B in First Half of 2025",
+    category: "Cybersecurity",
+    source: "TechCrunch",
+    url: "https://techcrunch.com",
+    publishedAt: "August 17, 2025",
+    readingTime: "3 min read",
+    imageUrl:
+      "https://images.unsplash.com/photo-1550751827-4bd374c3f58b?w=800&h=450&fit=crop&auto=format",
+    description:
+      "Investors poured a record $18 billion into cybersecurity startups in the first half of 2025, driven by the surge in AI-powered attacks and the expanding regulatory requirements around data protection.",
+    number: "06",
+  },
+];
+
+// CLAUDE: REPLACE THIS — comes from article_analyses table, generated by Claude API
+export const mockAnalyses: Record<string, {
+  summary: string;
+  plainEnglish: string;
+  whyItMatters: string;
+  whatThisMeansForYou: string;
+  keyTakeaway: string;
+}> = {
+  art_001: {
+    // CLAUDE: REPLACE THIS
+    summary:
+      "NVIDIA unveiled its Blackwell Ultra chip architecture, the successor to the current H100 series. The new chips deliver roughly 3x the AI inference throughput at similar power consumption levels, which could significantly change the economics of running large language models in the cloud.",
+    // CLAUDE: REPLACE THIS
+    plainEnglish:
+      "Think of AI chips like engines in a race car. Right now, companies like OpenAI and Google rent incredibly powerful—but expensive—engines from NVIDIA to run their AI models. NVIDIA just announced a new engine that's three times faster for the same cost. That means running AI gets cheaper and faster overnight. Cloud providers like AWS and Microsoft Azure will need to upgrade their 'garages' to fit these new engines, which is a massive construction project worth hundreds of billions of dollars.",
+    // CLAUDE: REPLACE THIS
+    whyItMatters:
+      "This isn't just a hardware story — it's an infrastructure story. When AI inference gets 3x cheaper, it becomes economically viable to deploy AI in places that weren't feasible before: real-time medical imaging, autonomous vehicle decisions, edge devices with no internet connection. The companies that move fastest to adopt Blackwell Ultra will have a meaningful cost and capability advantage over those that don't. This also accelerates the timeline for AI replacing expensive human tasks in knowledge work.",
+    // CLAUDE: REPLACE THIS
+    whatThisMeansForYou:
+      "As someone interested in AI and software engineering, this matters directly to your career path. The infrastructure that runs AI is becoming a core part of software engineering — not just for AI researchers, but for every engineer building products. Understanding how GPU architecture translates to system design decisions will make you a stronger candidate for roles at companies building AI-first products. The cybersecurity angle is also significant: faster, cheaper AI means faster, more sophisticated attacks too.",
+    // CLAUDE: REPLACE THIS
+    keyTakeaway:
+      "When AI gets 3x cheaper to run, the question stops being 'can we afford to use AI?' and becomes 'what can't we do without it?' — and that changes every industry simultaneously.",
+  },
+  art_002: {
+    summary:
+      "Federal Reserve Chair Jerome Powell signaled the Fed may cut its benchmark interest rate twice before the end of 2025. This follows months of inflation cooling toward the Fed's 2% target. Rate cuts would lower borrowing costs across the economy, directly affecting startup funding, consumer credit, and corporate hiring budgets.",
+    plainEnglish:
+      "Interest rates are basically the price of borrowing money. When the Fed raises rates, borrowing gets expensive, so companies slow down hiring and investing. When they cut rates — like they're signaling now — borrowing becomes cheaper. That means: startups can take loans to grow faster, companies can afford to hire more people, and investors who've been sitting on cash start putting it back into the market. It's like the economy getting a green light after sitting at a red light for two years.",
+    whyItMatters:
+      "Tech hiring has been in a sustained correction since 2022, when rising rates forced companies to prioritize profitability over growth. If the Fed cuts rates twice, we could see a meaningful rebound in tech hiring in early 2026 — right when many current juniors and seniors are entering the job market. However, this cycle may look different because AI-driven productivity gains mean companies might grow revenue without proportionally growing headcount.",
+    whatThisMeansForYou:
+      "The job market you graduate into is directly shaped by these macroeconomic cycles. Two rate cuts before year-end would meaningfully improve hiring conditions at the companies you're targeting in software engineering and AI. It's worth tracking this: a hiring rebound driven by cheaper capital, combined with AI reducing the need for junior roles, means the best opportunities will go to candidates who can demonstrate differentiated, AI-leveraged skills — not just baseline coding ability.",
+    keyTakeaway:
+      "Rate cuts are a green light for the economy — but in a world where AI is replacing junior roles, a rising tide won't lift every boat equally.",
+  },
+  art_003: {
+    summary:
+      "A third-party vendor used by one of the five largest US banks was compromised via a supply chain attack, exposing names, Social Security numbers, account numbers, and transaction history for approximately 14 million customers. The attackers remained undetected inside the vendor's systems for an estimated 47 days before discovery.",
+    plainEnglish:
+      "Imagine a bank hires a company to handle their customer notifications — emails, texts, that kind of thing. Now imagine a hacker breaks into that notification company instead of the bank directly, because the notification company has weaker security but still has access to all the bank's customer data. That's a supply chain attack. The hacker didn't need to break the bank's front door — they snuck in through the side door of a vendor. This is one of the hardest types of attacks to defend against, because you're only as secure as the least-secure company in your network.",
+    whyItMatters:
+      "This breach will accelerate regulatory pressure on financial institutions to implement strict third-party vendor risk requirements. The SEC and CISA have both been pushing for mandatory disclosure timelines and supply chain security audits. For the cybersecurity industry, this validates the massive demand for professionals who specialize in third-party risk management, threat hunting, and incident response — areas currently underserved even as investment hits record highs.",
+    whatThisMeansForYou:
+      "Supply chain security is one of the fastest-growing and most critical subfields in cybersecurity right now. As someone interested in both cybersecurity and AI, the combination is particularly compelling: AI-powered threat detection is now being used to identify anomalous vendor behavior before it becomes a breach. Companies are hiring engineers who understand both the security problem and the technical tooling to solve it. This is exactly the intersection where you can build a differentiated career.",
+    keyTakeaway:
+      "The weakest link in any security system isn't usually the target — it's the vendor they trusted. Understanding supply chain risk is now a foundational cybersecurity competency.",
+  },
+};
+
+// DATABASE: REPLACE THIS — comes from saved_articles table joined with articles
+export const mockSavedArticles: string[] = ["art_003", "art_004"];
+
+// DATABASE: REPLACE THIS — comes from database or config
+export const majorOptions = [
+  "Computer Science",
+  "Finance",
+  "Business",
+  "Engineering",
+  "Economics",
+  "Political Science",
+  "Biology",
+  "Communications",
+  "Design",
+  "Psychology",
+  "Mathematics",
+  "Other",
+];
+
+// DATABASE: REPLACE THIS — comes from careers table
+export const careerOptions = [
+  "Software Engineering",
+  "Cybersecurity",
+  "AI / Machine Learning",
+  "Data Science",
+  "Finance",
+  "Investment Banking",
+  "Consulting",
+  "Product Management",
+  "Entrepreneurship",
+  "Research",
+  "Cloud Infrastructure",
+  "UX / Design",
+  "Other",
+];
+
+export const categoryColors: Record<string, string> = {
+  AI: "text-violet-400 bg-violet-400/10 border-violet-400/20",
+  Cybersecurity: "text-cyan-400 bg-cyan-400/10 border-cyan-400/20",
+  Finance: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
+  Technology: "text-blue-400 bg-blue-400/10 border-blue-400/20",
+  Business: "text-amber-400 bg-amber-400/10 border-amber-400/20",
+};

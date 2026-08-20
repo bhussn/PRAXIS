@@ -1,0 +1,10 @@
+{
+  "description": "Delivers personalized daily industry news briefings that simplify complex stories and connect them to college students' majors and career goals.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
