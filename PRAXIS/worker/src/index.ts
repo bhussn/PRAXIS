@@ -1,9 +1,34 @@
 import { getSupabase, Env } from "./supabase";
 import { fetchRSS } from "./rss";
-import { selectTopArticles } from "./claude";
+import {
+  selectTopArticles,
+  generatePersonalizedAnalysis,
+} from "./claude";
 
 const MAX_ARTICLES_PER_SOURCE = 15;
 const MAX_SOURCES_PER_RUN = 8;
+
+interface AnalysisRequestBody {
+  user_id: string;
+  profile: Record<string, unknown>;
+  article: {
+    id: number;
+    title: string;
+    source: string;
+    url: string;
+    description: string | null;
+    category: string | null;
+    topics: string[] | null;
+    published_at: string | null;
+  };
+}
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Content-Type": "application/json",
+};
 
 export default {
   async scheduled(
@@ -19,31 +44,297 @@ export default {
     env: Env
   ) {
     try {
+      const url = new URL(request.url);
+
+      // ============================================================
+      // CORS PREFLIGHT
+      // ============================================================
+
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: CORS_HEADERS,
+        });
+      }
+
+      // ============================================================
+      // ARTICLE ANALYSIS ENDPOINT
+      // ============================================================
+
+      if (
+        url.pathname === "/analyze" &&
+        request.method === "POST"
+      ) {
+        console.log("Received /analyze request");
+
+        const body =
+          (await request.json()) as AnalysisRequestBody;
+
+        // ----------------------------------------------------------
+        // Validate request
+        // ----------------------------------------------------------
+
+        if (!body.user_id) {
+          throw new Error(
+            "Missing user_id in analysis request"
+          );
+        }
+
+        if (!body.profile) {
+          throw new Error(
+            "Missing profile in analysis request"
+          );
+        }
+
+        if (!body.article) {
+          throw new Error(
+            "Missing article in analysis request"
+          );
+        }
+
+        if (!body.article.id) {
+          throw new Error(
+            "Missing article ID in analysis request"
+          );
+        }
+
+        console.log(
+          `Generating analysis for article ${body.article.id}`
+        );
+
+        console.log(
+          `Article title: ${body.article.title}`
+        );
+
+        console.log(
+          `Article category: ${body.article.category}`
+        );
+
+        console.log(
+          `User ID: ${body.user_id}`
+        );
+
+        // ----------------------------------------------------------
+        // Generate personalized Claude analysis
+        // ----------------------------------------------------------
+
+        const result =
+          await generatePersonalizedAnalysis(
+            env,
+            body.profile,
+            body.article
+          );
+
+        console.log(
+          `Successfully generated analysis for article ${body.article.id}`
+        );
+
+        // ==========================================================
+        // SAVE ANALYSIS
+        // ==========================================================
+
+        const supabase = getSupabase(env);
+
+        console.log(
+          `Saving analysis for article ${body.article.id} and user ${body.user_id}`
+        );
+
+        const analysisData = {
+          article_id: body.article.id,
+          user_id: body.user_id,
+          summary: result.summary,
+          plain_english: result.plain_english,
+          why_it_matters: result.why_it_matters,
+          what_it_means_for_you:
+            result.what_it_means_for_you,
+          key_takeaway: result.key_takeaway,
+        };
+
+        // ----------------------------------------------------------
+        // Check whether this user already has an analysis
+        // for this article.
+        // ----------------------------------------------------------
+
+        const {
+          data: existingAnalysis,
+          error: existingError,
+        } = await supabase
+          .from("article_analyses")
+          .select("id")
+          .eq(
+            "article_id",
+            body.article.id
+          )
+          .eq(
+            "user_id",
+            body.user_id
+          )
+          .maybeSingle();
+
+        if (existingError) {
+          console.error(
+            "Failed checking existing article analysis:",
+            existingError
+          );
+
+          throw new Error(
+            `Failed checking existing article analysis: ${existingError.message}`
+          );
+        }
+
+        let savedAnalysis;
+
+        // ==========================================================
+        // UPDATE EXISTING ANALYSIS
+        // ==========================================================
+
+        if (existingAnalysis) {
+          console.log(
+            `Updating existing analysis ${existingAnalysis.id}`
+          );
+
+          const {
+            data,
+            error: updateError,
+          } = await supabase
+            .from("article_analyses")
+            .update({
+              summary:
+                analysisData.summary,
+
+              plain_english:
+                analysisData.plain_english,
+
+              why_it_matters:
+                analysisData.why_it_matters,
+
+              what_it_means_for_you:
+                analysisData.what_it_means_for_you,
+
+              key_takeaway:
+                analysisData.key_takeaway,
+            })
+            .eq(
+              "id",
+              existingAnalysis.id
+            )
+            .select()
+            .single();
+
+          if (updateError) {
+            console.error(
+              "Failed to update article analysis:",
+              updateError
+            );
+
+            throw new Error(
+              `Failed to update article analysis: ${updateError.message}`
+            );
+          }
+
+          savedAnalysis = data;
+        }
+
+        // ==========================================================
+        // INSERT NEW ANALYSIS
+        // ==========================================================
+
+        else {
+          console.log(
+            `Creating new analysis for article ${body.article.id}`
+          );
+
+          const {
+            data,
+            error: insertError,
+          } = await supabase
+            .from("article_analyses")
+            .insert(analysisData)
+            .select()
+            .single();
+
+          if (insertError) {
+            console.error(
+              "Failed to insert article analysis:",
+              insertError
+            );
+
+            throw new Error(
+              `Failed to insert article analysis: ${insertError.message}`
+            );
+          }
+
+          savedAnalysis = data;
+        }
+
+        console.log(
+          `Successfully saved analysis for article ${body.article.id}`
+        );
+
+        // ----------------------------------------------------------
+        // Return saved database row
+        // ----------------------------------------------------------
+
+        return new Response(
+          JSON.stringify(savedAnalysis),
+          {
+            status: 200,
+            headers: CORS_HEADERS,
+          }
+        );
+      }
+
+      // ============================================================
+      // DAILY PIPELINE
+      // ============================================================
+
       await runPipeline(env);
 
       return new Response(
         "PRAXIS pipeline completed",
-        { status: 200 }
+        {
+          status: 200,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+          },
+        }
       );
     } catch (error) {
-      console.error(error);
+      console.error(
+        "PRAXIS Worker error:",
+        error
+      );
 
       return new Response(
-        "Pipeline failed",
-        { status: 500 }
+        JSON.stringify({
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown error",
+        }),
+        {
+          status: 500,
+          headers: CORS_HEADERS,
+        }
       );
     }
   },
 };
 
+// ============================================================
+// DAILY PRAXIS PIPELINE
+// ============================================================
+
 async function runPipeline(env: Env) {
   const supabase = getSupabase(env);
 
-  console.log("Starting PRAXIS pipeline");
+  console.log(
+    "Starting PRAXIS pipeline"
+  );
 
-  // ==========================================
+  // ==========================================================
   // 1. GET ACTIVE SOURCES
-  // ==========================================
+  // ==========================================================
 
   const {
     data: sources,
@@ -70,9 +361,9 @@ async function runPipeline(env: Env) {
     `Found ${sources?.length ?? 0} active sources`
   );
 
-  // ==========================================
-  // 2. PROCESS 8 SOURCES IN PARALLEL
-  // ==========================================
+  // ==========================================================
+  // 2. PROCESS SOURCES
+  // ==========================================================
 
   const sourcesToProcess =
     (sources ?? []).slice(
@@ -85,67 +376,77 @@ async function runPipeline(env: Env) {
   );
 
   await Promise.all(
-    sourcesToProcess.map(async (source) => {
-      if (!source.rss_url) return;
-
-      try {
-        const rssArticles =
-          await fetchRSS(source.rss_url);
-
-        const limitedArticles =
-          rssArticles.slice(
-            0,
-            MAX_ARTICLES_PER_SOURCE
-          );
-
-        const rows = limitedArticles.map(
-          (article) => ({
-            title: article.title,
-            source: source.name,
-            url: article.url,
-            description: article.description,
-            image_url: article.image_url,
-            category:
-              source.interests?.name ?? null,
-            published_at:
-              article.published_at,
-          })
-        );
-
-        if (rows.length > 0) {
-          const {
-            error: saveError,
-          } = await supabase
-            .from("articles")
-            .upsert(rows, {
-              onConflict: "url",
-              ignoreDuplicates: true,
-            });
-
-          if (saveError) {
-            throw saveError;
-          }
+    sourcesToProcess.map(
+      async (source) => {
+        if (!source.rss_url) {
+          return;
         }
 
-        console.log(
-          `${source.name}: ${limitedArticles.length} articles`
-        );
-      } catch (error) {
-        console.error(
-          `Failed ${source.name}`,
-          error
-        );
+        try {
+          const rssArticles =
+            await fetchRSS(
+              source.rss_url
+            );
+
+          const limitedArticles =
+            rssArticles.slice(
+              0,
+              MAX_ARTICLES_PER_SOURCE
+            );
+
+          const rows =
+            limitedArticles.map(
+              (article) => ({
+                title: article.title,
+                source: source.name,
+                url: article.url,
+                description:
+                  article.description,
+                image_url:
+                  article.image_url,
+                category:
+                  source.interests?.[0]
+                    ?.name ?? null,
+                published_at:
+                  article.published_at,
+              })
+            );
+
+          if (rows.length > 0) {
+            const {
+              error: saveError,
+            } = await supabase
+              .from("articles")
+              .upsert(rows, {
+                onConflict: "url",
+                ignoreDuplicates: true,
+              });
+
+            if (saveError) {
+              throw saveError;
+            }
+          }
+
+          console.log(
+            `${source.name}: ${limitedArticles.length} articles`
+          );
+        } catch (error) {
+          console.error(
+            `Failed ${source.name}`,
+            error
+          );
+        }
       }
-    })
+    )
   );
 
   console.log(
     "RSS ingestion completed for this run"
   );
 
-  // ==========================================
+  // ==========================================================
   // 3. DETERMINE YESTERDAY
-  // ==========================================
+  // ==========================================================
 
   const yesterday = new Date();
 
@@ -175,9 +476,9 @@ async function runPipeline(env: Env) {
   const end =
     endDate.toISOString();
 
-  // ==========================================
+  // ==========================================================
   // 4. GET YESTERDAY'S ARTICLES
-  // ==========================================
+  // ==========================================================
 
   const {
     data: articles,
@@ -192,8 +493,14 @@ async function runPipeline(env: Env) {
       published_at,
       category
     `)
-    .gte("published_at", start)
-    .lt("published_at", end);
+    .gte(
+      "published_at",
+      start
+    )
+    .lt(
+      "published_at",
+      end
+    );
 
   if (articleError) {
     throw articleError;
@@ -203,9 +510,9 @@ async function runPipeline(env: Env) {
     `Found ${articles?.length ?? 0} articles for ${date}`
   );
 
-  // ==========================================
+  // ==========================================================
   // 5. GET INTERESTS
-  // ==========================================
+  // ==========================================================
 
   const {
     data: interests,
@@ -218,98 +525,113 @@ async function runPipeline(env: Env) {
     throw interestError;
   }
 
-  // ==========================================
+  // ==========================================================
   // 6. CLEAR PREVIOUS DAILY PICKS
-  // ==========================================
+  // ==========================================================
 
   const {
     error: deleteError,
   } = await supabase
     .from("daily_articles")
     .delete()
-    .eq("brief_date", date);
+    .eq(
+      "brief_date",
+      date
+    );
 
   if (deleteError) {
     throw deleteError;
   }
 
-  // ==========================================
-  // 7. CLAUDE RANKING IN PARALLEL
-  // ==========================================
+  // ==========================================================
+  // 7. RANK ARTICLES
+  // ==========================================================
 
   await Promise.all(
-    (interests ?? []).map(async (interest) => {
-
-      const candidates =
-        (articles ?? []).filter(
-          (article) =>
-            article.category === interest.name
-        );
-
-      if (candidates.length < 3) {
-        console.log(
-          `Not enough articles for ${interest.name}: ${candidates.length}`
-        );
-        return;
-      }
-
-      console.log(
-        `Ranking ${candidates.length} articles for ${interest.name}`
-      );
-
-      try {
-
-        const selected =
-          await selectTopArticles(
-            env,
-            interest.name,
-            candidates
+    (interests ?? []).map(
+      async (interest) => {
+        const candidates =
+          (articles ?? []).filter(
+            (article) =>
+              article.category ===
+              interest.name
           );
 
-        // MUST SAVE EXACTLY 3
-        if (selected.length !== 3) {
-          throw new Error(
-            `Claude returned ${selected.length} articles for ${interest.name}; expected exactly 3`
-          );
-        }
-
-        // ======================================
-        // 8. SAVE TOP 3
-        // ======================================
-
-        const rows =
-          selected.map(
-            (articleId, index) => ({
-              interest_id: interest.id,
-              article_id: articleId,
-              brief_date: date,
-              rank: index + 1,
-            })
+        if (
+          candidates.length < 3
+        ) {
+          console.log(
+            `Not enough articles for ${interest.name}: ${candidates.length}`
           );
 
-        const {
-          error: dailyError,
-        } = await supabase
-          .from("daily_articles")
-          .insert(rows);
-
-        if (dailyError) {
-          throw dailyError;
+          return;
         }
 
         console.log(
-          `${interest.name}: saved exactly 3 top articles`
+          `Ranking ${candidates.length} articles for ${interest.name}`
         );
 
-      } catch (error) {
+        try {
+          const selected =
+            await selectTopArticles(
+              env,
+              interest.name,
+              candidates
+            );
 
-        console.error(
-          `Failed ranking ${interest.name}`,
-          error
-        );
+          if (
+            selected.length !== 3
+          ) {
+            throw new Error(
+              `Claude returned ${selected.length} articles for ${interest.name}; expected exactly 3`
+            );
+          }
 
+          // ==================================================
+          // 8. SAVE TOP 3
+          // ==================================================
+
+          const rows =
+            selected.map(
+              (
+                articleId,
+                index
+              ) => ({
+                interest_id:
+                  interest.id,
+
+                article_id:
+                  articleId,
+
+                brief_date:
+                  date,
+
+                rank:
+                  index + 1,
+              })
+            );
+
+          const {
+            error: dailyError,
+          } = await supabase
+            .from("daily_articles")
+            .insert(rows);
+
+          if (dailyError) {
+            throw dailyError;
+          }
+
+          console.log(
+            `${interest.name}: saved exactly 3 top articles`
+          );
+        } catch (error) {
+          console.error(
+            `Failed ranking ${interest.name}`,
+            error
+          );
+        }
       }
-    })
+    )
   );
 
   console.log(

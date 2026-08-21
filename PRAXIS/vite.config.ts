@@ -72,10 +72,10 @@ type FigmaSiteConfiguration = {
 /** Applies /.figma/make/site.json to the generated document shell. */
 function figmaSiteConfiguration(config: FigmaSiteConfiguration): Plugin {
   function sanitizeHtmlValue(value: string | undefined): string {
-    return value?.replace(/[^a-zA-Z0-9_-]/g, '') || ''
+    return value?.replace(/[^a-zA-Z0-9_-]/g, '') || '';
   }
   function escapeHtmlText(value: string): string {
-    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
   function replaceHtmlCommentSlot(html: string, slotName: string, content: string): string {
     return html.replace(`<!-- ${slotName} -->`, content)
@@ -292,7 +292,7 @@ function figmaReactRefreshBoundaryFallback(): Plugin {
 
       return null
     },
-  }
+  };
 }
 
 /**

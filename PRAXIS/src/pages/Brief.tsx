@@ -22,6 +22,15 @@ type Article = {
   created_at: string;
 };
 
+type DailyArticle = {
+  id: number;
+  article_id: number;
+  interest_id: number;
+  brief_date: string;
+  rank: number;
+  created_at?: string | null;
+};
+
 export default function Brief() {
   const [profile, setProfile] = useState<ProfileData>({
     name: null,
@@ -30,6 +39,7 @@ export default function Brief() {
   });
 
   const [briefArticles, setBriefArticles] = useState<Article[]>([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -39,34 +49,46 @@ export default function Brief() {
       setError("");
 
       try {
-        // ----------------------------------------
-        // 1. Get logged-in user
-        // ----------------------------------------
+        // =====================================================
+        // 1. GET LOGGED-IN USER
+        // =====================================================
 
         const {
           data: { user },
           error: userError,
         } = await supabase.auth.getUser();
 
-        console.log("USER:", user);
-
-        if (userError || !user) {
-          throw new Error("You must be logged in to view your brief.");
+        if (userError) {
+          throw userError;
         }
 
-        // ----------------------------------------
-        // 2. Get profile + major
-        // ----------------------------------------
+        if (!user) {
+          throw new Error(
+            "You must be logged in to view your brief."
+          );
+        }
 
-        const { data: profileData, error: profileError } = await supabase
+        console.log("=================================");
+        console.log("PRAXIS USER");
+        console.log("=================================");
+        console.log(user.id);
+
+        // =====================================================
+        // 2. GET PROFILE
+        // =====================================================
+
+        const {
+          data: profileData,
+          error: profileError,
+        } = await supabase
           .from("profiles")
-          .select(`
-            name,
-            concerns,
-            majors (
-              name
-            )
-          `)
+          .select(
+            `
+              name,
+              concerns,
+              major_id
+            `
+          )
           .eq("id", user.id)
           .single();
 
@@ -74,23 +96,228 @@ export default function Brief() {
           throw profileError;
         }
 
+        console.log("=================================");
+        console.log("PRAXIS PROFILE");
+        console.log("=================================");
+        console.log(profileData);
+
+        // =====================================================
+        // 3. GET MAJOR
+        // =====================================================
+
+        let majorName: string | null = null;
+
+        if (profileData.major_id !== null) {
+          const {
+            data: majorData,
+            error: majorError,
+          } = await supabase
+            .from("majors")
+            .select("name")
+            .eq("id", profileData.major_id)
+            .single();
+
+          if (majorError) {
+            throw majorError;
+          }
+
+          majorName = majorData?.name ?? null;
+        }
+
+        // Save profile information
         setProfile({
-          name: profileData.name,
-          major: profileData.majors?.name ?? null,
-          concerns: profileData.concerns,
+          name: profileData.name ?? null,
+          major: majorName,
+          concerns: profileData.concerns ?? null,
         });
 
-        // ----------------------------------------
-        // 3. Get today's personalized brief
-        // ----------------------------------------
+        console.log("=================================");
+        console.log("PRAXIS MAJOR");
+        console.log("=================================");
+        console.log(majorName);
 
-        const today = new Date().toISOString().split("T")[0];
+        // =====================================================
+        // 4. GET USER'S SELECTED INTERESTS
+        // =====================================================
 
-        const { data: briefData, error: briefError } = await supabase
-          .from("user_briefs")
-          .select(`
-            rank,
-            articles (
+        const {
+          data: userInterests,
+          error: interestsError,
+        } = await supabase
+          .from("user_interests")
+          .select("interest_id")
+          .eq("user_id", user.id);
+
+        if (interestsError) {
+          throw interestsError;
+        }
+
+        console.log("=================================");
+        console.log("PRAXIS USER INTERESTS");
+        console.log("=================================");
+        console.log(userInterests);
+
+        const interestIds =
+          userInterests?.map(
+            (item) => item.interest_id
+          ) ?? [];
+
+        console.log(
+          "PRAXIS INTEREST IDS:",
+          interestIds
+        );
+
+        // User has no selected interests
+        if (interestIds.length === 0) {
+          console.log(
+            "PRAXIS: User has no selected interests."
+          );
+
+          setBriefArticles([]);
+          return;
+        }
+
+        // =====================================================
+        // 5. GET INTEREST INFORMATION
+        // =====================================================
+
+        const {
+          data: interests,
+          error: interestsLookupError,
+        } = await supabase
+          .from("interests")
+          .select("id, name")
+          .in("id", interestIds);
+
+        if (interestsLookupError) {
+          throw interestsLookupError;
+        }
+
+        console.log("=================================");
+        console.log("PRAXIS SELECTED INTERESTS");
+        console.log("=================================");
+        console.log(interests);
+
+        // =====================================================
+        // 6. GET YESTERDAY'S DATE
+        // =====================================================
+        //
+        // daily_articles.brief_date contains the date for
+        // which the Worker generated the brief.
+        //
+        // Your current database shows:
+        //
+        // 2026-08-20
+        //
+        // so on August 21 the frontend should request
+        // August 20.
+        //
+        // =====================================================
+
+        const yesterday = new Date();
+
+        yesterday.setUTCDate(
+          yesterday.getUTCDate() - 1
+        );
+
+        const briefDate =
+          yesterday.toISOString().split("T")[0];
+
+        console.log("=================================");
+        console.log("PRAXIS BRIEF DATE");
+        console.log("=================================");
+        console.log(briefDate);
+
+        // =====================================================
+        // 7. GET DAILY ARTICLES
+        // =====================================================
+        //
+        // We explicitly retrieve article_id rather than asking
+        // Supabase to perform a nested relationship query.
+        //
+        // This follows:
+        //
+        // user_interests.interest_id
+        //        ↓
+        // daily_articles.interest_id
+        //
+        // =====================================================
+
+        const {
+          data: dailyArticles,
+          error: dailyArticlesError,
+        } = await supabase
+          .from("daily_articles")
+          .select(
+            `
+              id,
+              article_id,
+              interest_id,
+              brief_date,
+              rank,
+              created_at
+            `
+          )
+          .in(
+            "interest_id",
+            interestIds
+          )
+          .eq(
+            "brief_date",
+            briefDate
+          )
+          .order("rank", {
+            ascending: true,
+          });
+
+        if (dailyArticlesError) {
+          throw dailyArticlesError;
+        }
+
+        console.log("=================================");
+        console.log("PRAXIS DAILY ARTICLES");
+        console.log("=================================");
+        console.log(dailyArticles);
+
+        // No daily articles yet
+        if (
+          !dailyArticles ||
+          dailyArticles.length === 0
+        ) {
+          console.log(
+            "PRAXIS: No daily articles found."
+          );
+
+          setBriefArticles([]);
+          return;
+        }
+
+        // =====================================================
+        // 8. GET ARTICLE IDs
+        // =====================================================
+
+        const articleIds =
+          dailyArticles.map(
+            (dailyArticle) =>
+              dailyArticle.article_id
+          );
+
+        console.log("=================================");
+        console.log("PRAXIS ARTICLE IDS");
+        console.log("=================================");
+        console.log(articleIds);
+
+        // =====================================================
+        // 9. GET ACTUAL ARTICLES
+        // =====================================================
+
+        const {
+          data: articles,
+          error: articlesError,
+        } = await supabase
+          .from("articles")
+          .select(
+            `
               id,
               title,
               source,
@@ -101,37 +328,135 @@ export default function Brief() {
               topics,
               published_at,
               created_at
-            )
-          `)
-          .eq("user_id", user.id)
-          .eq("brief_date", today)
-          .order("rank", { ascending: true });
+            `
+          )
+          .in("id", articleIds);
 
-        if (briefError) {
-          throw briefError;
+        if (articlesError) {
+          throw articlesError;
         }
 
-        console.log("TODAY'S BRIEF:", briefData);
+        console.log("=================================");
+        console.log("PRAXIS ARTICLES FROM DATABASE");
+        console.log("=================================");
+        console.log(articles);
 
-        // ----------------------------------------
-        // 4. Convert joined articles into Article[]
-        // ----------------------------------------
+        if (!articles || articles.length === 0) {
+          console.log(
+            "PRAXIS: Article IDs exist but no articles were returned."
+          );
 
-        const selectedArticles =
-          briefData
-            ?.map((item) => item.articles)
-            .filter(
-              (article): article is Article => article !== null
-            ) ?? [];
+          setBriefArticles([]);
+          return;
+        }
 
-        setBriefArticles(selectedArticles.slice(0, 3));
+        // =====================================================
+        // 10. CREATE ARTICLE LOOKUP MAP
+        // =====================================================
+        //
+        // Supabase's .in() query does not guarantee that
+        // articles are returned in the same order as
+        // daily_articles.
+        //
+        // Create a Map so we can restore the rank order.
+        //
+        // =====================================================
+
+        const articleMap = new Map<number, Article>();
+
+        articles.forEach((article) => {
+          articleMap.set(
+            article.id,
+            article as Article
+          );
+        });
+
+        // =====================================================
+        // 11. RESTORE RANK ORDER
+        // =====================================================
+
+        const orderedArticles: Article[] = [];
+
+        dailyArticles.forEach(
+          (dailyArticle) => {
+            const article =
+              articleMap.get(
+                dailyArticle.article_id
+              );
+
+            if (article) {
+              orderedArticles.push(article);
+            }
+          }
+        );
+
+        console.log("=================================");
+        console.log("PRAXIS ORDERED ARTICLES");
+        console.log("=================================");
+        console.log(orderedArticles);
+
+        // =====================================================
+        // 12. REMOVE DUPLICATES
+        // =====================================================
+
+        const uniqueArticles =
+          Array.from(
+            new Map(
+              orderedArticles.map(
+                (article) => [
+                  article.id,
+                  article,
+                ]
+              )
+            ).values()
+          );
+
+        console.log("=================================");
+        console.log("PRAXIS UNIQUE ARTICLES");
+        console.log("=================================");
+        console.log(uniqueArticles);
+
+        // =====================================================
+        // 13. GET TOP 3
+        // =====================================================
+        //
+        // The PRAXIS brief is designed to show 3 stories.
+        //
+        // Because daily_articles is already ordered by rank,
+        // the first three matching articles are used.
+        //
+        // =====================================================
+
+        const topThree =
+          uniqueArticles.slice(0, 3);
+
+        console.log("=================================");
+        console.log("PRAXIS FINAL BRIEF");
+        console.log("=================================");
+        console.log(topThree);
+
+        setBriefArticles(topThree);
       } catch (error) {
-        console.error("Error loading brief:", error);
+        console.error(
+          "================================="
+        );
+
+        console.error(
+          "PRAXIS BRIEF ERROR"
+        );
+
+        console.error(
+          "================================="
+        );
+
+        console.error(error);
 
         if (error instanceof Error) {
           setError(error.message);
         } else {
-          setError("Could not load your brief.");
+          setError(
+            "Could not load your brief."
+          );
         }
       } finally {
         setLoading(false);
@@ -141,11 +466,22 @@ export default function Brief() {
     loadBrief();
   }, []);
 
-  const today = new Date().toLocaleDateString("en-US", {
+  // =========================================================
+  // DISPLAY DATE
+  // =========================================================
+
+  const displayDate = new Date(
+    Date.now() -
+      24 * 60 * 60 * 1000
+  ).toLocaleDateString("en-US", {
     weekday: "long",
     month: "long",
     day: "numeric",
   });
+
+  // =========================================================
+  // GREETING
+  // =========================================================
 
   const hour = new Date().getHours();
 
@@ -156,9 +492,9 @@ export default function Brief() {
         ? "Good afternoon"
         : "Good evening";
 
-  // ----------------------------------------
-  // Loading
-  // ----------------------------------------
+  // =========================================================
+  // LOADING STATE
+  // =========================================================
 
   if (loading) {
     return (
@@ -172,28 +508,32 @@ export default function Brief() {
     );
   }
 
-  // ----------------------------------------
-  // Error
-  // ----------------------------------------
+  // =========================================================
+  // ERROR STATE
+  // =========================================================
 
   if (error) {
     return (
       <div className="min-h-screen px-6 lg:px-10 py-8 max-w-5xl mx-auto">
         <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-6 py-5">
-          <p className="text-sm text-red-400">{error}</p>
+          <p className="text-sm text-red-400">
+            {error}
+          </p>
         </div>
       </div>
     );
   }
 
-  // ----------------------------------------
-  // Page
-  // ----------------------------------------
+  // =========================================================
+  // PAGE
+  // =========================================================
 
   return (
     <div className="min-h-screen px-6 lg:px-10 py-8 max-w-5xl mx-auto">
 
-      {/* Header */}
+      {/* =====================================================
+          HEADER
+          ===================================================== */}
 
       <div className="mb-10 animate-fade-in">
 
@@ -202,15 +542,19 @@ export default function Brief() {
         </p>
 
         <h1 className="text-3xl lg:text-4xl font-black text-white leading-tight mb-2">
-          {greeting}, {profile.name}.
+          {greeting}
+          {profile.name
+            ? `, ${profile.name}.`
+            : "."}
         </h1>
 
         <p className="text-sm text-[#4A4360] font-mono mb-6">
-          {today}
+          {displayDate}
         </p>
 
         <p className="text-base text-[#8B82A0] leading-relaxed max-w-lg">
-          Yesterday's most important stories, explained for you.
+          Yesterday's most important stories,
+          explained for you.
         </p>
 
         {/* Personalization badge */}
@@ -232,7 +576,9 @@ export default function Brief() {
         </div>
       </div>
 
-      {/* Stories */}
+      {/* =====================================================
+          STORIES
+          ===================================================== */}
 
       <div className="mb-6">
 
@@ -245,41 +591,59 @@ export default function Brief() {
           <div className="flex-1 h-px bg-[#1E1830]" />
 
           <span className="font-mono text-[10px] text-[#4A4360]">
-            {new Date()
-              .toLocaleDateString("en-US", {
-                month: "short",
-                day: "numeric",
-              })
+            {new Date(
+              Date.now() -
+                24 * 60 * 60 * 1000
+            )
+              .toLocaleDateString(
+                "en-US",
+                {
+                  month: "short",
+                  day: "numeric",
+                }
+              )
               .toUpperCase()}
           </span>
 
         </div>
+
+        {/* ===================================================
+            NO ARTICLES
+            =================================================== */}
 
         {briefArticles.length === 0 ? (
 
           <div className="rounded-2xl border border-[#1E1830] bg-[#0F0B18] px-6 py-8 text-center">
 
             <p className="text-sm text-[#8B82A0]">
-              Your daily brief hasn't been generated yet.
+              Your daily brief hasn't
+              been generated yet.
             </p>
 
             <p className="text-xs text-[#4A4360] mt-2">
-              Check back soon as PRAXIS builds your personalized brief.
+              Check back soon as PRAXIS
+              builds your personalized brief.
             </p>
 
           </div>
 
         ) : (
 
+          /* =================================================
+             ARTICLES
+             ================================================= */
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
 
-            {briefArticles.map((article) => (
-              <ArticleCard
-                key={article.id}
-                article={article}
-                variant="brief"
-              />
-            ))}
+            {briefArticles.map(
+              (article) => (
+                <ArticleCard
+                  key={article.id}
+                  article={article}
+                  variant="brief"
+                />
+              )
+            )}
 
           </div>
 
@@ -287,21 +651,11 @@ export default function Brief() {
 
       </div>
 
-      {/* Footer */}
+      {/* =====================================================
+          FOOTER
+          ===================================================== */}
 
       <div className="mt-12 rounded-2xl border border-[#1E1830] bg-[#0F0B18] px-6 py-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-
-        <div>
-
-          <p className="text-sm font-semibold text-white mb-1">
-            Explore the full archive
-          </p>
-
-          <p className="text-xs text-[#8B82A0]">
-            Browse every story from the past 30 days.
-          </p>
-
-        </div>
 
         <a
           href="/articles"

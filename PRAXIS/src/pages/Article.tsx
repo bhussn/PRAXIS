@@ -1,18 +1,55 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
+
+import { supabase } from "@/lib/supabase";
+
 import CategoryBadge from "@/components/CategoryBadge";
 import SaveButton from "@/components/SaveButton";
 import AnalysisLoading from "@/components/AnalysisLoading";
 import AnalysisError from "@/components/AnalysisError";
-import { mockArticles, mockAnalyses, mockSavedArticles, mockProfile, mockCareers } from "@/data/mockData";
 
-function AnalysisBlock({ label, children }: { label: string; children: React.ReactNode }) {
+interface ArticleData {
+  id: number;
+  title: string;
+  source: string;
+  url: string;
+  image_url: string | null;
+  description: string | null;
+  category: string | null;
+  topics: string[] | null;
+  published_at: string | null;
+  created_at: string;
+}
+
+interface ProfileData {
+  [key: string]: unknown;
+}
+
+interface AnalysisData {
+  article_id: number;
+  summary: string;
+  plain_english: string;
+  why_it_matters: string;
+  what_it_means_for_you: string;
+  key_takeaway: string;
+}
+
+function AnalysisBlock({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
     <div className="mb-8">
       <h3 className="text-xs font-mono font-medium text-violet-400 tracking-widest mb-3 uppercase">
         {label}
       </h3>
-      <div className="text-[#C4BADC] leading-relaxed text-sm">{children}</div>
+
+      <div className="text-[#C4BADC] leading-relaxed text-sm">
+        {children}
+      </div>
     </div>
   );
 }
@@ -21,37 +58,396 @@ type AnalysisState = "loading" | "ready" | "error";
 
 export default function Article() {
   const { id } = useParams<{ id: string }>();
-  // DATABASE: REPLACE THIS — fetch article from Supabase articles table by id
-  const article = mockArticles.find((a) => a.id === id);
 
-  // CLAUDE: REPLACE THIS — analysis state simulates Claude API call
-  const [analysisState, setAnalysisState] = useState<AnalysisState>("loading");
-  const isSaved = id ? mockSavedArticles.includes(id) : false;
+  const [article, setArticle] = useState<ArticleData | null>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+
+  const [articleLoading, setArticleLoading] = useState(true);
+
+  const [analysisState, setAnalysisState] =
+    useState<AnalysisState>("loading");
+
+  /*
+   * =========================================================
+   * LOAD ARTICLE + USER PROFILE
+   * =========================================================
+   */
 
   useEffect(() => {
-    setAnalysisState("loading");
-    // CLAUDE: REPLACE THIS — simulate Claude API latency
-    const hasAnalysis = id && mockAnalyses[id];
-    const timer = setTimeout(() => {
-      setAnalysisState(hasAnalysis ? "ready" : "error");
-    }, 1800);
-    return () => clearTimeout(timer);
+    async function loadData() {
+      if (!id) {
+        setArticleLoading(false);
+        setAnalysisState("error");
+        return;
+      }
+
+      try {
+        setArticleLoading(true);
+
+        /*
+         * -----------------------------------------------------
+         * Get article
+         * -----------------------------------------------------
+         */
+
+        const {
+          data: articleData,
+          error: articleError,
+        } = await supabase
+          .from("articles")
+          .select("*")
+          .eq("id", id)
+          .single();
+
+        if (articleError) {
+          throw articleError;
+        }
+
+        setArticle(articleData);
+
+        /*
+         * -----------------------------------------------------
+         * Get authenticated user
+         * -----------------------------------------------------
+         */
+
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+          throw new Error("You must be signed in.");
+        }
+
+        /*
+         * -----------------------------------------------------
+         * Get user's profile
+         * -----------------------------------------------------
+         */
+
+        const {
+          data: profileData,
+          error: profileError,
+        } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", user.id)
+          .single();
+
+        if (profileError) {
+          throw profileError;
+        }
+
+        setProfile(profileData);
+
+        setArticleLoading(false);
+      } catch (error) {
+        console.error(
+          "Failed to load article/profile:",
+          error
+        );
+
+        setArticleLoading(false);
+        setAnalysisState("error");
+      }
+    }
+
+    loadData();
   }, [id]);
 
+  /*
+   * =========================================================
+   * LOAD EXISTING ANALYSIS OR GENERATE A NEW ONE
+   * =========================================================
+   *
+   * IMPORTANT:
+   *
+   * The Worker now:
+   *
+   * 1. Receives the profile + article
+   * 2. Calls Claude
+   * 3. Saves the analysis to article_analyses
+   * 4. Returns the generated analysis
+   *
+   * Therefore the frontend DOES NOT insert into
+   * article_analyses anymore.
+   */
+
+  const loadOrGenerateAnalysis = useCallback(async () => {
+    if (!article || !profile || !id) {
+      return;
+    }
+
+    try {
+      setAnalysisState("loading");
+
+      /*
+       * -------------------------------------------------------
+       * STEP 1
+       *
+       * Check whether an analysis already exists for this
+       * article.
+       *
+       * The analysis is now stored by article_id.
+       * -------------------------------------------------------
+       */
+
+      const {
+        data: existingAnalysis,
+        error: existingError,
+      } = await supabase
+        .from("article_analyses")
+        .select("*")
+        .eq("article_id", article.id)
+        .maybeSingle();
+
+      if (existingError) {
+        throw existingError;
+      }
+
+      /*
+       * -------------------------------------------------------
+       * STEP 2
+       *
+       * If analysis already exists, use it.
+       *
+       * DO NOT call Claude again.
+       * -------------------------------------------------------
+       */
+
+      if (existingAnalysis) {
+        console.log(
+          "Existing PRAXIS analysis found. Using cached analysis."
+        );
+
+        setAnalysis(existingAnalysis as AnalysisData);
+        setAnalysisState("ready");
+
+        return;
+      }
+
+      /*
+       * -------------------------------------------------------
+       * STEP 3
+       *
+       * No analysis exists.
+       *
+       * Build request for Worker.
+       * -------------------------------------------------------
+       */
+
+      const analysisRequest = {
+        profile: {
+          ...profile,
+        },
+
+        article: {
+          id: article.id,
+          title: article.title,
+          source: article.source,
+          url: article.url,
+          description: article.description,
+          category: article.category,
+          topics: article.topics,
+          published_at: article.published_at,
+        },
+      };
+
+      console.log(
+        `No analysis found for article ${article.id}. Generating...`
+      );
+
+      /*
+       * -------------------------------------------------------
+       * STEP 4
+       *
+       * Call PRAXIS Worker.
+       *
+       * The Worker handles:
+       *
+       * Worker
+       *    ↓
+       * Claude
+       *    ↓
+       * article_analyses
+       *    ↓
+       * response
+       * -------------------------------------------------------
+       */
+
+      const response = await fetch(
+        "https://praxis.bhussenxi.workers.dev/analyze",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type": "application/json",
+          },
+
+          body: JSON.stringify(analysisRequest),
+        }
+      );
+
+      /*
+       * -------------------------------------------------------
+       * STEP 5
+       *
+       * Handle Worker errors.
+       * -------------------------------------------------------
+       */
+
+      if (!response.ok) {
+        const errorText = await response.text();
+
+        console.error(
+          "PRAXIS Worker returned an error:",
+          errorText
+        );
+
+        throw new Error(
+          `Analysis request failed (${response.status})`
+        );
+      }
+
+      /*
+       * -------------------------------------------------------
+       * STEP 6
+       *
+       * Worker returns the analysis generated by Claude.
+       * -------------------------------------------------------
+       */
+
+      const generatedAnalysis =
+        (await response.json()) as AnalysisData;
+
+      /*
+       * -------------------------------------------------------
+       * STEP 7
+       *
+       * Validate the Worker response.
+       * -------------------------------------------------------
+       */
+
+      const requiredFields = [
+        "summary",
+        "plain_english",
+        "why_it_matters",
+        "what_it_means_for_you",
+        "key_takeaway",
+      ] as const;
+
+      for (const field of requiredFields) {
+        if (
+          typeof generatedAnalysis[field] !== "string" ||
+          !generatedAnalysis[field].trim()
+        ) {
+          throw new Error(
+            `Worker returned incomplete analysis. Missing: ${field}`
+          );
+        }
+      }
+
+      /*
+       * -------------------------------------------------------
+       * STEP 8
+       *
+       * Display the generated analysis.
+       *
+       * DO NOT INSERT IT INTO SUPABASE HERE.
+       *
+       * The Worker already saved it.
+       * -------------------------------------------------------
+       */
+
+      setAnalysis({
+        article_id: article.id,
+        summary: generatedAnalysis.summary,
+        plain_english: generatedAnalysis.plain_english,
+        why_it_matters:
+          generatedAnalysis.why_it_matters,
+        what_it_means_for_you:
+          generatedAnalysis.what_it_means_for_you,
+        key_takeaway:
+          generatedAnalysis.key_takeaway,
+      });
+
+      setAnalysisState("ready");
+
+      console.log(
+        `Successfully generated PRAXIS analysis for article ${article.id}`
+      );
+    } catch (error) {
+      console.error(
+        "Failed to generate PRAXIS analysis:",
+        error
+      );
+
+      setAnalysisState("error");
+    }
+  }, [article, profile, id]);
+
+  /*
+   * =========================================================
+   * START ANALYSIS AFTER ARTICLE + PROFILE LOAD
+   * =========================================================
+   */
+
+  useEffect(() => {
+    if (!articleLoading && article && profile) {
+      loadOrGenerateAnalysis();
+    }
+  }, [
+    articleLoading,
+    article,
+    profile,
+    loadOrGenerateAnalysis,
+  ]);
+
+  /*
+   * =========================================================
+   * RETRY
+   * =========================================================
+   */
+
   const handleRetry = () => {
-    setAnalysisState("loading");
-    const timer = setTimeout(() => {
-      setAnalysisState(id && mockAnalyses[id] ? "ready" : "error");
-    }, 1500);
-    return () => clearTimeout(timer);
+    loadOrGenerateAnalysis();
   };
+
+  /*
+   * =========================================================
+   * ARTICLE LOADING
+   * =========================================================
+   */
+
+  if (articleLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-6">
+        <div className="w-full max-w-2xl">
+          <AnalysisLoading />
+        </div>
+      </div>
+    );
+  }
+
+  /*
+   * =========================================================
+   * ARTICLE NOT FOUND
+   * =========================================================
+   */
 
   if (!article) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <p className="text-[#8B82A0] mb-4">Article not found.</p>
-          <Link to="/articles" className="text-violet-400 text-sm hover:text-violet-300">
+          <p className="text-[#8B82A0] mb-4">
+            Article not found.
+          </p>
+
+          <Link
+            to="/articles"
+            className="text-violet-400 text-sm hover:text-violet-300"
+          >
             ← Back to Articles
           </Link>
         </div>
@@ -59,55 +455,137 @@ export default function Article() {
     );
   }
 
-  // CLAUDE: REPLACE THIS — comes from article_analyses table
-  const analysis = id ? mockAnalyses[id] : null;
+  /*
+   * =========================================================
+   * ARTICLE DISPLAY DATA
+   * =========================================================
+   */
+
+  const publishedDate = article.published_at
+    ? new Date(article.published_at)
+    : null;
+
+  const publishedDateText =
+    publishedDate &&
+    !Number.isNaN(publishedDate.getTime())
+      ? publishedDate.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "";
+
+  const wordCount = article.description
+    ? article.description.trim().split(/\s+/).length
+    : 0;
+
+  const readingMinutes = Math.max(
+    1,
+    Math.ceil(wordCount / 200)
+  );
+
+  /*
+   * =========================================================
+   * RENDER
+   * =========================================================
+   */
 
   return (
     <div className="min-h-screen">
-      {/* Back nav */}
+
+      {/* Back navigation */}
+
       <div className="px-6 lg:px-10 pt-6 pb-0 max-w-4xl mx-auto">
         <Link
           to="/articles"
           className="inline-flex items-center gap-2 text-xs text-[#4A4360] hover:text-[#8B82A0] transition-colors font-mono"
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
             <path d="M19 12H5M12 19l-7-7 7-7" />
           </svg>
+
           Back to Articles
         </Link>
       </div>
 
       {/* Hero image */}
-      {/* DATABASE: REPLACE THIS — image_url comes from articles.image_url */}
+
       <div className="relative h-64 lg:h-80 mt-6 overflow-hidden bg-[#0F0B18]">
-        <img
-          src={article.imageUrl}
-          alt={article.title}
-          className="w-full h-full object-cover opacity-60"
-        />
+
+        {article.image_url ? (
+          <img
+            src={article.image_url}
+            alt={article.title}
+            className="w-full h-full object-cover opacity-60"
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#19132A] via-[#110D19] to-[#0B0910]">
+            <div className="text-center">
+              <div className="text-3xl font-black tracking-tight text-violet-400/40">
+                PRAXIS
+              </div>
+
+              <div className="mt-1 font-mono text-[8px] tracking-[0.3em] text-[#4A4360]">
+                INDUSTRY INTELLIGENCE
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="absolute inset-0 bg-gradient-to-t from-[#08060D] via-[#08060D]/30 to-transparent" />
       </div>
 
       <div className="px-6 lg:px-10 max-w-4xl mx-auto">
+
         {/* Article header */}
+
         <div className="py-8 border-b border-[#1E1830] mb-8">
+
           <div className="flex flex-wrap items-center gap-3 mb-5">
-            {/* DATABASE: REPLACE THIS */}
-            <CategoryBadge category={article.category} size="md" />
-            <span className="text-xs text-[#4A4360] font-mono">{article.readingTime}</span>
-            <span className="text-xs text-[#4A4360] font-mono">·</span>
-            <span className="text-xs text-[#4A4360] font-mono">{article.publishedAt}</span>
+
+            {article.category && (
+              <CategoryBadge
+                category={article.category}
+                size="md"
+              />
+            )}
+
+            <span className="text-xs text-[#4A4360] font-mono">
+              {readingMinutes} min read
+            </span>
+
+            {publishedDateText && (
+              <>
+                <span className="text-xs text-[#4A4360] font-mono">
+                  ·
+                </span>
+
+                <span className="text-xs text-[#4A4360] font-mono">
+                  {publishedDateText}
+                </span>
+              </>
+            )}
           </div>
 
-          {/* DATABASE: REPLACE THIS — title comes from articles.title */}
           <h1 className="text-2xl lg:text-3xl font-black text-white leading-tight mb-4">
             {article.title}
           </h1>
 
           <div className="flex items-center justify-between gap-4 flex-wrap">
+
             <div className="flex items-center gap-3">
-              {/* DATABASE: REPLACE THIS — source and url come from articles */}
-              <span className="text-xs text-[#8B82A0] font-mono">Source: {article.source}</span>
+
+              <span className="text-xs text-[#8B82A0] font-mono">
+                Source: {article.source}
+              </span>
+
               <a
                 href={article.url}
                 target="_blank"
@@ -115,111 +593,174 @@ export default function Article() {
                 className="inline-flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors font-medium"
               >
                 Read Original Article
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
                   <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3" />
                 </svg>
               </a>
             </div>
-            {/* DATABASE: REPLACE THIS — save state comes from saved_articles */}
-            <SaveButton articleId={article.id} initialSaved={isSaved} />
+
+            <SaveButton
+              articleId={String(article.id)}
+            />
           </div>
         </div>
 
-        {/* PRAXIS Analysis section */}
+        {/* PRAXIS Analysis */}
+
         <div className="mb-12">
-          {/* Section header */}
+
           <div className="flex items-center gap-3 mb-6">
+
             <div>
               <div className="flex items-center gap-2 mb-1">
-                <p className="font-mono text-xs tracking-widest text-violet-400 font-medium">PRAXIS ANALYSIS</p>
-                {/* CLAUDE: REPLACE THIS — personalized badge */}
+
+                <p className="font-mono text-xs tracking-widest text-violet-400 font-medium">
+                  PRAXIS ANALYSIS
+                </p>
+
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-[9px] font-mono text-violet-400 tracking-wider">
                   PERSONALIZED FOR YOU
                 </span>
               </div>
+
               <p className="text-xs text-[#4A4360]">
-                Generated for {mockProfile.major} · {mockCareers.slice(0, 2).join(", ")}
-                {/* DATABASE: REPLACE THIS + CLAUDE: REPLACE THIS */}
+                Generated from your PRAXIS profile
               </p>
             </div>
           </div>
 
-          {/* Analysis states */}
-          {analysisState === "loading" && <AnalysisLoading />}
+          {/* Loading */}
+
+          {analysisState === "loading" && (
+            <AnalysisLoading />
+          )}
+
+          {/* Error */}
 
           {analysisState === "error" && (
-            <AnalysisError originalUrl={article.url} onRetry={handleRetry} />
+            <AnalysisError
+              originalUrl={article.url}
+              onRetry={handleRetry}
+            />
           )}
+
+          {/* Analysis */}
 
           {analysisState === "ready" && analysis && (
             <div className="rounded-2xl border border-violet-500/15 bg-[#0F0B18] overflow-hidden">
+
               <div className="p-6 lg:p-8 space-y-0">
-                {/* CLAUDE: REPLACE THIS */}
+
                 <AnalysisBlock label="What happened?">
                   {analysis.summary}
                 </AnalysisBlock>
 
                 <div className="h-px bg-[#1E1830] mb-8" />
 
-                {/* CLAUDE: REPLACE THIS */}
                 <AnalysisBlock label="In plain English">
-                  {analysis.plainEnglish}
+                  {analysis.plain_english}
                 </AnalysisBlock>
 
                 <div className="h-px bg-[#1E1830] mb-8" />
 
-                {/* CLAUDE: REPLACE THIS */}
                 <AnalysisBlock label="Why it matters">
-                  {analysis.whyItMatters}
+                  {analysis.why_it_matters}
                 </AnalysisBlock>
 
                 <div className="h-px bg-[#1E1830] mb-8" />
 
-                {/* CLAUDE: REPLACE THIS — personalized using major, careers, and concerns */}
                 <div className="mb-8">
+
                   <div className="flex items-center gap-2 mb-3">
+
                     <h3 className="text-xs font-mono font-medium text-violet-400 tracking-widest uppercase">
                       What this means for you
                     </h3>
-                    <span className="text-[9px] font-mono text-[#4A4360] tracking-wider">BASED ON YOUR GOALS</span>
+
+                    <span className="text-[9px] font-mono text-[#4A4360] tracking-wider">
+                      BASED ON YOUR GOALS
+                    </span>
                   </div>
-                  <div className="text-[#C4BADC] leading-relaxed text-sm">{analysis.whatThisMeansForYou}</div>
+
+                  <div className="text-[#C4BADC] leading-relaxed text-sm">
+                    {analysis.what_it_means_for_you}
+                  </div>
                 </div>
 
                 <div className="h-px bg-[#1E1830] mb-8" />
 
-                {/* CLAUDE: REPLACE THIS — key takeaway */}
                 <div className="rounded-xl bg-violet-600/10 border border-violet-500/20 px-6 py-5">
-                  <p className="text-[10px] font-mono text-violet-400 tracking-widest mb-3">KEY TAKEAWAY</p>
+
+                  <p className="text-[10px] font-mono text-violet-400 tracking-widest mb-3">
+                    KEY TAKEAWAY
+                  </p>
+
                   <p className="text-base font-semibold text-white leading-relaxed">
-                    "{analysis.keyTakeaway}"
+                    "{analysis.key_takeaway}"
                   </p>
                 </div>
+
               </div>
             </div>
           )}
         </div>
 
         {/* Related actions */}
+
         <div className="pb-12 flex flex-col sm:flex-row gap-3">
+
           <Link
             to="/articles"
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[#2D2548] text-[#8B82A0] hover:text-white text-sm font-medium transition-all"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M19 12H5M12 19l-7-7 7-7" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path d="M19 12H5M12 19l-7 7 7-7" />
             </svg>
+
             All articles
           </Link>
+
           <Link
             to="/brief"
             className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-violet-500/30 bg-violet-600/10 text-violet-300 hover:bg-violet-600/20 text-sm font-medium transition-all"
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" />
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            >
+              <rect
+                x="3"
+                y="3"
+                width="18"
+                height="18"
+                rx="2"
+              />
+
+              <path d="M3 9h18M9 21V9" />
             </svg>
+
             Today's brief
           </Link>
+
         </div>
       </div>
     </div>

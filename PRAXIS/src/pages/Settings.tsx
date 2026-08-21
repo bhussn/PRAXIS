@@ -541,12 +541,6 @@ export default function Settings() {
               Sign out
             </button>
 
-            <button
-              className="w-full text-left px-4 py-3 rounded-xl border border-red-500/20 text-red-400/70 hover:text-red-400 hover:border-red-500/40 text-sm font-medium transition-all"
-            >
-              Delete account
-            </button>
-
           </div>
 
         </div>
