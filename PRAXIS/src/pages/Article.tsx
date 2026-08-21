@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { useParams, Link } from "react-router-dom";
 
 import { supabase } from "@/lib/supabase";
@@ -39,7 +39,7 @@ function AnalysisBlock({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <div className="mb-8">
@@ -54,19 +54,47 @@ function AnalysisBlock({
   );
 }
 
-type AnalysisState = "loading" | "ready" | "error";
+type AnalysisState =
+  | "loading"
+  | "ready"
+  | "error";
 
 export default function Article() {
-  const { id } = useParams<{ id: string }>();
+  const { id } =
+    useParams<{ id: string }>();
 
-  const [article, setArticle] = useState<ArticleData | null>(null);
-  const [profile, setProfile] = useState<ProfileData | null>(null);
-  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+  const [article, setArticle] =
+    useState<ArticleData | null>(
+      null
+    );
 
-  const [articleLoading, setArticleLoading] = useState(true);
+  const [profile, setProfile] =
+    useState<ProfileData | null>(
+      null
+    );
 
-  const [analysisState, setAnalysisState] =
-    useState<AnalysisState>("loading");
+  const [analysis, setAnalysis] =
+    useState<AnalysisData | null>(
+      null
+    );
+
+  const [userId, setUserId] =
+    useState<string | null>(
+      null
+    );
+
+  const [
+    articleLoading,
+    setArticleLoading,
+  ] = useState(true);
+
+  const [
+    analysisState,
+    setAnalysisState,
+  ] =
+    useState<AnalysisState>(
+      "loading"
+    );
 
   /*
    * =========================================================
@@ -77,79 +105,124 @@ export default function Article() {
   useEffect(() => {
     async function loadData() {
       if (!id) {
-        setArticleLoading(false);
-        setAnalysisState("error");
+        setArticleLoading(
+          false
+        );
+
+        setAnalysisState(
+          "error"
+        );
+
         return;
       }
 
       try {
-        setArticleLoading(true);
+        setArticleLoading(
+          true
+        );
 
         /*
          * -----------------------------------------------------
-         * Get article
+         * GET ARTICLE
          * -----------------------------------------------------
          */
 
         const {
           data: articleData,
-          error: articleError,
+          error:
+            articleError,
         } = await supabase
           .from("articles")
           .select("*")
           .eq("id", id)
           .single();
 
-        if (articleError) {
+        if (
+          articleError
+        ) {
           throw articleError;
         }
 
-        setArticle(articleData);
+        setArticle(
+          articleData
+        );
 
         /*
          * -----------------------------------------------------
-         * Get authenticated user
+         * GET AUTHENTICATED USER
          * -----------------------------------------------------
          */
 
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+          error: userError,
+        } =
+          await supabase.auth.getUser();
+
+        if (userError) {
+          throw userError;
+        }
 
         if (!user) {
-          throw new Error("You must be signed in.");
+          throw new Error(
+            "You must be signed in."
+          );
         }
 
         /*
+         * Store the user ID so analysis
+         * can be personalized per user.
+         */
+
+        setUserId(
+          user.id
+        );
+
+        /*
          * -----------------------------------------------------
-         * Get user's profile
+         * GET USER PROFILE
          * -----------------------------------------------------
          */
 
         const {
           data: profileData,
-          error: profileError,
+          error:
+            profileError,
         } = await supabase
           .from("profiles")
           .select("*")
-          .eq("id", user.id)
+          .eq(
+            "id",
+            user.id
+          )
           .single();
 
-        if (profileError) {
+        if (
+          profileError
+        ) {
           throw profileError;
         }
 
-        setProfile(profileData);
+        setProfile(
+          profileData
+        );
 
-        setArticleLoading(false);
+        setArticleLoading(
+          false
+        );
       } catch (error) {
         console.error(
           "Failed to load article/profile:",
           error
         );
 
-        setArticleLoading(false);
-        setAnalysisState("error");
+        setArticleLoading(
+          false
+        );
+
+        setAnalysisState(
+          "error"
+        );
       }
     }
 
@@ -161,246 +234,357 @@ export default function Article() {
    * LOAD EXISTING ANALYSIS OR GENERATE A NEW ONE
    * =========================================================
    *
-   * IMPORTANT:
+   * Flow:
    *
-   * The Worker now:
+   * Article + User + Profile
    *
-   * 1. Receives the profile + article
-   * 2. Calls Claude
-   * 3. Saves the analysis to article_analyses
-   * 4. Returns the generated analysis
+   *     ↓
    *
-   * Therefore the frontend DOES NOT insert into
-   * article_analyses anymore.
+   * Check article_analyses
+   *
+   * article_id + user_id
+   *
+   *     ↓
+   *
+   * Existing analysis?
+   *
+   * YES → display cached analysis
+   *
+   * NO → call PRAXIS Worker
+   *
+   *     ↓
+   *
+   * Claude generates analysis
+   *
+   *     ↓
+   *
+   * Worker saves analysis
+   *
+   *     ↓
+   *
+   * Worker returns analysis
+   *
+   *     ↓
+   *
+   * Display analysis
+   * =========================================================
    */
 
-  const loadOrGenerateAnalysis = useCallback(async () => {
-    if (!article || !profile || !id) {
-      return;
-    }
-
-    try {
-      setAnalysisState("loading");
-
-      /*
-       * -------------------------------------------------------
-       * STEP 1
-       *
-       * Check whether an analysis already exists for this
-       * article.
-       *
-       * The analysis is now stored by article_id.
-       * -------------------------------------------------------
-       */
-
-      const {
-        data: existingAnalysis,
-        error: existingError,
-      } = await supabase
-        .from("article_analyses")
-        .select("*")
-        .eq("article_id", article.id)
-        .maybeSingle();
-
-      if (existingError) {
-        throw existingError;
-      }
-
-      /*
-       * -------------------------------------------------------
-       * STEP 2
-       *
-       * If analysis already exists, use it.
-       *
-       * DO NOT call Claude again.
-       * -------------------------------------------------------
-       */
-
-      if (existingAnalysis) {
-        console.log(
-          "Existing PRAXIS analysis found. Using cached analysis."
-        );
-
-        setAnalysis(existingAnalysis as AnalysisData);
-        setAnalysisState("ready");
-
-        return;
-      }
-
-      /*
-       * -------------------------------------------------------
-       * STEP 3
-       *
-       * No analysis exists.
-       *
-       * Build request for Worker.
-       * -------------------------------------------------------
-       */
-
-      const analysisRequest = {
-        profile: {
-          ...profile,
-        },
-
-        article: {
-          id: article.id,
-          title: article.title,
-          source: article.source,
-          url: article.url,
-          description: article.description,
-          category: article.category,
-          topics: article.topics,
-          published_at: article.published_at,
-        },
-      };
-
-      console.log(
-        `No analysis found for article ${article.id}. Generating...`
-      );
-
-      /*
-       * -------------------------------------------------------
-       * STEP 4
-       *
-       * Call PRAXIS Worker.
-       *
-       * The Worker handles:
-       *
-       * Worker
-       *    ↓
-       * Claude
-       *    ↓
-       * article_analyses
-       *    ↓
-       * response
-       * -------------------------------------------------------
-       */
-
-      const response = await fetch(
-        "https://praxis.bhussenxi.workers.dev/analyze",
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type": "application/json",
-          },
-
-          body: JSON.stringify(analysisRequest),
-        }
-      );
-
-      /*
-       * -------------------------------------------------------
-       * STEP 5
-       *
-       * Handle Worker errors.
-       * -------------------------------------------------------
-       */
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        console.error(
-          "PRAXIS Worker returned an error:",
-          errorText
-        );
-
-        throw new Error(
-          `Analysis request failed (${response.status})`
-        );
-      }
-
-      /*
-       * -------------------------------------------------------
-       * STEP 6
-       *
-       * Worker returns the analysis generated by Claude.
-       * -------------------------------------------------------
-       */
-
-      const generatedAnalysis =
-        (await response.json()) as AnalysisData;
-
-      /*
-       * -------------------------------------------------------
-       * STEP 7
-       *
-       * Validate the Worker response.
-       * -------------------------------------------------------
-       */
-
-      const requiredFields = [
-        "summary",
-        "plain_english",
-        "why_it_matters",
-        "what_it_means_for_you",
-        "key_takeaway",
-      ] as const;
-
-      for (const field of requiredFields) {
+  const loadOrGenerateAnalysis =
+    useCallback(
+      async () => {
         if (
-          typeof generatedAnalysis[field] !== "string" ||
-          !generatedAnalysis[field].trim()
+          !article ||
+          !profile ||
+          !id ||
+          !userId
         ) {
-          throw new Error(
-            `Worker returned incomplete analysis. Missing: ${field}`
+          return;
+        }
+
+        try {
+          setAnalysisState(
+            "loading"
+          );
+
+          /*
+           * -------------------------------------------------------
+           * STEP 1
+           *
+           * CHECK FOR EXISTING PERSONALIZED ANALYSIS
+           * -------------------------------------------------------
+           */
+
+          const {
+            data:
+              existingAnalysis,
+            error:
+              existingError,
+          } = await supabase
+            .from(
+              "article_analyses"
+            )
+            .select("*")
+            .eq(
+              "article_id",
+              article.id
+            )
+            .eq(
+              "user_id",
+              userId
+            )
+            .maybeSingle();
+
+          if (
+            existingError
+          ) {
+            throw existingError;
+          }
+
+          /*
+           * -------------------------------------------------------
+           * STEP 2
+           *
+           * USE EXISTING ANALYSIS
+           * -------------------------------------------------------
+           */
+
+          if (
+            existingAnalysis
+          ) {
+            console.log(
+              "Existing PRAXIS analysis found. Using cached analysis."
+            );
+
+            setAnalysis(
+              existingAnalysis as AnalysisData
+            );
+
+            setAnalysisState(
+              "ready"
+            );
+
+            return;
+          }
+
+          /*
+           * -------------------------------------------------------
+           * STEP 3
+           *
+           * BUILD ANALYSIS REQUEST
+           * -------------------------------------------------------
+           */
+
+          const analysisRequest = {
+            /*
+             * REQUIRED BY WORKER
+             */
+
+            user_id:
+              userId,
+
+            /*
+             * USER PROFILE
+             */
+
+            profile: {
+              ...profile,
+            },
+
+            /*
+             * ARTICLE DATA
+             */
+
+            article: {
+              id:
+                article.id,
+
+              title:
+                article.title,
+
+              source:
+                article.source,
+
+              url:
+                article.url,
+
+              description:
+                article.description,
+
+              category:
+                article.category,
+
+              topics:
+                article.topics,
+
+              published_at:
+                article.published_at,
+            },
+          };
+
+          console.log(
+            `No analysis found for article ${article.id}. Generating...`
+          );
+
+          console.log(
+            "PRAXIS analysis request:",
+            analysisRequest
+          );
+
+          /*
+           * -------------------------------------------------------
+           * STEP 4
+           *
+           * CALL PRAXIS WORKER
+           * -------------------------------------------------------
+           */
+
+          const response =
+            await fetch(
+              "https://praxis-news-worker.bhussenxi.workers.dev/analyze",
+              {
+                method:
+                  "POST",
+
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+
+                body:
+                  JSON.stringify(
+                    analysisRequest
+                  ),
+              }
+            );
+
+          /*
+           * -------------------------------------------------------
+           * STEP 5
+           *
+           * HANDLE WORKER ERRORS
+           * -------------------------------------------------------
+           */
+
+          if (
+            !response.ok
+          ) {
+            const errorText =
+              await response.text();
+
+            console.error(
+              "PRAXIS Worker returned an error:",
+              errorText
+            );
+
+            throw new Error(
+              `Analysis request failed (${response.status}): ${errorText}`
+            );
+          }
+
+          /*
+           * -------------------------------------------------------
+           * STEP 6
+           *
+           * GET GENERATED ANALYSIS
+           * -------------------------------------------------------
+           */
+
+          const generatedAnalysis =
+            (await response.json()) as AnalysisData;
+
+          /*
+           * -------------------------------------------------------
+           * STEP 7
+           *
+           * VALIDATE RESPONSE
+           * -------------------------------------------------------
+           */
+
+          const requiredFields =
+            [
+              "summary",
+              "plain_english",
+              "why_it_matters",
+              "what_it_means_for_you",
+              "key_takeaway",
+            ] as const;
+
+          for (
+            const field of
+            requiredFields
+          ) {
+            if (
+              typeof generatedAnalysis[
+                field
+              ] !==
+                "string" ||
+              !generatedAnalysis[
+                field
+              ].trim()
+            ) {
+              throw new Error(
+                `Worker returned incomplete analysis. Missing: ${field}`
+              );
+            }
+          }
+
+          /*
+           * -------------------------------------------------------
+           * STEP 8
+           *
+           * DISPLAY ANALYSIS
+           *
+           * Worker already saved it in Supabase.
+           * -------------------------------------------------------
+           */
+
+          setAnalysis({
+            article_id:
+              article.id,
+
+            summary:
+              generatedAnalysis.summary,
+
+            plain_english:
+              generatedAnalysis.plain_english,
+
+            why_it_matters:
+              generatedAnalysis.why_it_matters,
+
+            what_it_means_for_you:
+              generatedAnalysis.what_it_means_for_you,
+
+            key_takeaway:
+              generatedAnalysis.key_takeaway,
+          });
+
+          setAnalysisState(
+            "ready"
+          );
+
+          console.log(
+            `Successfully generated PRAXIS analysis for article ${article.id}`
+          );
+        } catch (error) {
+          console.error(
+            "Failed to generate PRAXIS analysis:",
+            error
+          );
+
+          setAnalysisState(
+            "error"
           );
         }
-      }
-
-      /*
-       * -------------------------------------------------------
-       * STEP 8
-       *
-       * Display the generated analysis.
-       *
-       * DO NOT INSERT IT INTO SUPABASE HERE.
-       *
-       * The Worker already saved it.
-       * -------------------------------------------------------
-       */
-
-      setAnalysis({
-        article_id: article.id,
-        summary: generatedAnalysis.summary,
-        plain_english: generatedAnalysis.plain_english,
-        why_it_matters:
-          generatedAnalysis.why_it_matters,
-        what_it_means_for_you:
-          generatedAnalysis.what_it_means_for_you,
-        key_takeaway:
-          generatedAnalysis.key_takeaway,
-      });
-
-      setAnalysisState("ready");
-
-      console.log(
-        `Successfully generated PRAXIS analysis for article ${article.id}`
-      );
-    } catch (error) {
-      console.error(
-        "Failed to generate PRAXIS analysis:",
-        error
-      );
-
-      setAnalysisState("error");
-    }
-  }, [article, profile, id]);
+      },
+      [
+        article,
+        profile,
+        id,
+        userId,
+      ]
+    );
 
   /*
    * =========================================================
-   * START ANALYSIS AFTER ARTICLE + PROFILE LOAD
+   * START ANALYSIS AFTER ARTICLE + PROFILE + USER LOAD
    * =========================================================
    */
 
   useEffect(() => {
-    if (!articleLoading && article && profile) {
+    if (
+      !articleLoading &&
+      article &&
+      profile &&
+      userId
+    ) {
       loadOrGenerateAnalysis();
     }
   }, [
     articleLoading,
     article,
     profile,
+    userId,
     loadOrGenerateAnalysis,
   ]);
 
@@ -410,9 +594,10 @@ export default function Article() {
    * =========================================================
    */
 
-  const handleRetry = () => {
-    loadOrGenerateAnalysis();
-  };
+  const handleRetry =
+    () => {
+      loadOrGenerateAnalysis();
+    };
 
   /*
    * =========================================================
@@ -420,7 +605,9 @@ export default function Article() {
    * =========================================================
    */
 
-  if (articleLoading) {
+  if (
+    articleLoading
+  ) {
     return (
       <div className="min-h-screen flex items-center justify-center px-6">
         <div className="w-full max-w-2xl">
@@ -448,7 +635,8 @@ export default function Article() {
             to="/articles"
             className="text-violet-400 text-sm hover:text-violet-300"
           >
-            ← Back to Articles
+            ← Back to
+            Articles
           </Link>
         </div>
       </div>
@@ -461,28 +649,49 @@ export default function Article() {
    * =========================================================
    */
 
-  const publishedDate = article.published_at
-    ? new Date(article.published_at)
-    : null;
+  const publishedDate =
+    article.published_at
+      ? new Date(
+          article.published_at
+        )
+      : null;
 
   const publishedDateText =
     publishedDate &&
-    !Number.isNaN(publishedDate.getTime())
-      ? publishedDate.toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-          year: "numeric",
-        })
+    !Number.isNaN(
+      publishedDate.getTime()
+    )
+      ? publishedDate.toLocaleDateString(
+          "en-US",
+          {
+            month:
+              "short",
+
+            day:
+              "numeric",
+
+            year:
+              "numeric",
+          }
+        )
       : "";
 
-  const wordCount = article.description
-    ? article.description.trim().split(/\s+/).length
-    : 0;
+  const wordCount =
+    article.description
+      ? article.description
+          .trim()
+          .split(
+            /\s+/
+          ).length
+      : 0;
 
-  const readingMinutes = Math.max(
-    1,
-    Math.ceil(wordCount / 200)
-  );
+  const readingMinutes =
+    Math.max(
+      1,
+      Math.ceil(
+        wordCount / 200
+      )
+    );
 
   /*
    * =========================================================
@@ -493,7 +702,9 @@ export default function Article() {
   return (
     <div className="min-h-screen">
 
-      {/* Back navigation */}
+      {/* =====================================================
+          BACK NAVIGATION
+          ===================================================== */}
 
       <div className="px-6 lg:px-10 pt-6 pb-0 max-w-4xl mx-auto">
         <Link
@@ -515,14 +726,19 @@ export default function Article() {
         </Link>
       </div>
 
-      {/* Hero image */}
+      {/* =====================================================
+          HERO IMAGE
+          ===================================================== */}
 
       <div className="relative h-64 lg:h-80 mt-6 overflow-hidden bg-[#0F0B18]">
-
         {article.image_url ? (
           <img
-            src={article.image_url}
-            alt={article.title}
+            src={
+              article.image_url
+            }
+            alt={
+              article.title
+            }
             className="w-full h-full object-cover opacity-60"
           />
         ) : (
@@ -533,7 +749,8 @@ export default function Article() {
               </div>
 
               <div className="mt-1 font-mono text-[8px] tracking-[0.3em] text-[#4A4360]">
-                INDUSTRY INTELLIGENCE
+                INDUSTRY
+                INTELLIGENCE
               </div>
             </div>
           </div>
@@ -544,7 +761,9 @@ export default function Article() {
 
       <div className="px-6 lg:px-10 max-w-4xl mx-auto">
 
-        {/* Article header */}
+        {/* ===================================================
+            ARTICLE HEADER
+            =================================================== */}
 
         <div className="py-8 border-b border-[#1E1830] mb-8">
 
@@ -552,13 +771,18 @@ export default function Article() {
 
             {article.category && (
               <CategoryBadge
-                category={article.category}
+                category={
+                  article.category
+                }
                 size="md"
               />
             )}
 
             <span className="text-xs text-[#4A4360] font-mono">
-              {readingMinutes} min read
+              {
+                readingMinutes
+              }{" "}
+              min read
             </span>
 
             {publishedDateText && (
@@ -568,14 +792,18 @@ export default function Article() {
                 </span>
 
                 <span className="text-xs text-[#4A4360] font-mono">
-                  {publishedDateText}
+                  {
+                    publishedDateText
+                  }
                 </span>
               </>
             )}
           </div>
 
           <h1 className="text-2xl lg:text-3xl font-black text-white leading-tight mb-4">
-            {article.title}
+            {
+              article.title
+            }
           </h1>
 
           <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -583,16 +811,22 @@ export default function Article() {
             <div className="flex items-center gap-3">
 
               <span className="text-xs text-[#8B82A0] font-mono">
-                Source: {article.source}
+                Source:{" "}
+                {
+                  article.source
+                }
               </span>
 
               <a
-                href={article.url}
+                href={
+                  article.url
+                }
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 text-xs text-violet-400 hover:text-violet-300 transition-colors font-medium"
               >
-                Read Original Article
+                Read Original
+                Article
 
                 <svg
                   width="10"
@@ -608,17 +842,20 @@ export default function Article() {
             </div>
 
             <SaveButton
-              articleId={String(article.id)}
+              articleId={String(
+                article.id
+              )}
             />
           </div>
         </div>
 
-        {/* PRAXIS Analysis */}
+        {/* ===================================================
+            PRAXIS ANALYSIS
+            =================================================== */}
 
         <div className="mb-12">
 
           <div className="flex items-center gap-3 mb-6">
-
             <div>
               <div className="flex items-center gap-2 mb-1">
 
@@ -627,93 +864,126 @@ export default function Article() {
                 </p>
 
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-violet-500/10 border border-violet-500/20 text-[9px] font-mono text-violet-400 tracking-wider">
-                  PERSONALIZED FOR YOU
+                  PERSONALIZED
+                  FOR YOU
                 </span>
               </div>
 
               <p className="text-xs text-[#4A4360]">
-                Generated from your PRAXIS profile
+                Generated from
+                your PRAXIS
+                profile
               </p>
             </div>
           </div>
 
-          {/* Loading */}
+          {/* =================================================
+              LOADING
+              ================================================= */}
 
-          {analysisState === "loading" && (
+          {analysisState ===
+            "loading" && (
             <AnalysisLoading />
           )}
 
-          {/* Error */}
+          {/* =================================================
+              ERROR
+              ================================================= */}
 
-          {analysisState === "error" && (
+          {analysisState ===
+            "error" && (
             <AnalysisError
-              originalUrl={article.url}
-              onRetry={handleRetry}
+              originalUrl={
+                article.url
+              }
+              onRetry={
+                handleRetry
+              }
             />
           )}
 
-          {/* Analysis */}
+          {/* =================================================
+              ANALYSIS
+              ================================================= */}
 
-          {analysisState === "ready" && analysis && (
-            <div className="rounded-2xl border border-violet-500/15 bg-[#0F0B18] overflow-hidden">
+          {analysisState ===
+            "ready" &&
+            analysis && (
+              <div className="rounded-2xl border border-violet-500/15 bg-[#0F0B18] overflow-hidden">
 
-              <div className="p-6 lg:p-8 space-y-0">
+                <div className="p-6 lg:p-8 space-y-0">
 
-                <AnalysisBlock label="What happened?">
-                  {analysis.summary}
-                </AnalysisBlock>
+                  <AnalysisBlock label="What happened?">
+                    {
+                      analysis.summary
+                    }
+                  </AnalysisBlock>
 
-                <div className="h-px bg-[#1E1830] mb-8" />
+                  <div className="h-px bg-[#1E1830] mb-8" />
 
-                <AnalysisBlock label="In plain English">
-                  {analysis.plain_english}
-                </AnalysisBlock>
+                  <AnalysisBlock label="In plain English">
+                    {
+                      analysis.plain_english
+                    }
+                  </AnalysisBlock>
 
-                <div className="h-px bg-[#1E1830] mb-8" />
+                  <div className="h-px bg-[#1E1830] mb-8" />
 
-                <AnalysisBlock label="Why it matters">
-                  {analysis.why_it_matters}
-                </AnalysisBlock>
+                  <AnalysisBlock label="Why it matters">
+                    {
+                      analysis.why_it_matters
+                    }
+                  </AnalysisBlock>
 
-                <div className="h-px bg-[#1E1830] mb-8" />
+                  <div className="h-px bg-[#1E1830] mb-8" />
 
-                <div className="mb-8">
+                  <div className="mb-8">
 
-                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-2 mb-3">
 
-                    <h3 className="text-xs font-mono font-medium text-violet-400 tracking-widest uppercase">
-                      What this means for you
-                    </h3>
+                      <h3 className="text-xs font-mono font-medium text-violet-400 tracking-widest uppercase">
+                        What this
+                        means for
+                        you
+                      </h3>
 
-                    <span className="text-[9px] font-mono text-[#4A4360] tracking-wider">
-                      BASED ON YOUR GOALS
-                    </span>
+                      <span className="text-[9px] font-mono text-[#4A4360] tracking-wider">
+                        BASED ON
+                        YOUR GOALS
+                      </span>
+                    </div>
+
+                    <div className="text-[#C4BADC] leading-relaxed text-sm">
+                      {
+                        analysis.what_it_means_for_you
+                      }
+                    </div>
                   </div>
 
-                  <div className="text-[#C4BADC] leading-relaxed text-sm">
-                    {analysis.what_it_means_for_you}
+                  <div className="h-px bg-[#1E1830] mb-8" />
+
+                  <div className="rounded-xl bg-violet-600/10 border border-violet-500/20 px-6 py-5">
+
+                    <p className="text-[10px] font-mono text-violet-400 tracking-widest mb-3">
+                      KEY TAKEAWAY
+                    </p>
+
+                    <p className="text-base font-semibold text-white leading-relaxed">
+                      "
+                      {
+                        analysis.key_takeaway
+                      }
+                      "
+                    </p>
                   </div>
                 </div>
-
-                <div className="h-px bg-[#1E1830] mb-8" />
-
-                <div className="rounded-xl bg-violet-600/10 border border-violet-500/20 px-6 py-5">
-
-                  <p className="text-[10px] font-mono text-violet-400 tracking-widest mb-3">
-                    KEY TAKEAWAY
-                  </p>
-
-                  <p className="text-base font-semibold text-white leading-relaxed">
-                    "{analysis.key_takeaway}"
-                  </p>
-                </div>
-
               </div>
-            </div>
-          )}
+            )}
         </div>
 
-        {/* Related actions */}
+        {/* ===================================================
+            RELATED ACTIONS
+            =================================================== */}
 
         <div className="pb-12 flex flex-col sm:flex-row gap-3">
 
@@ -760,7 +1030,6 @@ export default function Article() {
 
             Today's brief
           </Link>
-
         </div>
       </div>
     </div>
