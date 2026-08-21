@@ -62,7 +62,7 @@ const navItems = [
         strokeLinecap="round"
         strokeLinejoin="round"
       >
-        <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+        <path d="M19 21l-7-5-7 5V5a2 2 0 0 2-2h10a2 2 0 0 2 2z" />
       </svg>
     ),
   },
@@ -76,76 +76,104 @@ export default function Sidebar() {
     major: null,
   });
 
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        // =====================================================
-        // 1. GET LOGGED-IN USER
-        // =====================================================
+  // =========================================================
+  // LOAD USER PROFILE
+  // =========================================================
 
+  const loadProfile = async () => {
+    try {
+      // =====================================================
+      // 1. GET LOGGED-IN USER
+      // =====================================================
+
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError) {
+        throw userError;
+      }
+
+      if (!user) {
+        return;
+      }
+
+      // =====================================================
+      // 2. GET PROFILE
+      // =====================================================
+
+      const {
+        data: profileData,
+        error: profileError,
+      } = await supabase
+        .from("profiles")
+        .select("name, major_id")
+        .eq("id", user.id)
+        .single();
+
+      if (profileError) {
+        throw profileError;
+      }
+
+      // =====================================================
+      // 3. GET MAJOR
+      // =====================================================
+
+      let majorName: string | null = null;
+
+      if (profileData?.major_id) {
         const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
-
-        if (userError) {
-          throw userError;
-        }
-
-        if (!user) {
-          return;
-        }
-
-        // =====================================================
-        // 2. GET PROFILE
-        // =====================================================
-
-        const {
-          data: profileData,
-          error: profileError,
+          data: majorData,
+          error: majorError,
         } = await supabase
-          .from("profiles")
-          .select("name, major_id")
-          .eq("id", user.id)
+          .from("majors")
+          .select("name")
+          .eq("id", profileData.major_id)
           .single();
 
-        if (profileError) {
-          throw profileError;
+        if (majorError) {
+          throw majorError;
         }
 
-        // =====================================================
-        // 3. GET MAJOR
-        // =====================================================
-
-        let majorName: string | null = null;
-
-        if (profileData?.major_id) {
-          const {
-            data: majorData,
-            error: majorError,
-          } = await supabase
-            .from("majors")
-            .select("name")
-            .eq("id", profileData.major_id)
-            .single();
-
-          if (majorError) {
-            throw majorError;
-          }
-
-          majorName = majorData?.name ?? null;
-        }
-
-        setProfile({
-          name: profileData?.name ?? user.email ?? null,
-          major: majorName,
-        });
-      } catch (error) {
-        console.error("PRAXIS SIDEBAR ERROR:", error);
+        majorName = majorData?.name ?? null;
       }
+
+      // =====================================================
+      // 4. UPDATE SIDEBAR PROFILE
+      // =====================================================
+
+      setProfile({
+        name: profileData?.name ?? user.email ?? null,
+        major: majorName,
+      });
+    } catch (error) {
+      console.error("PRAXIS SIDEBAR ERROR:", error);
+    }
+  };
+
+  // =========================================================
+  // LOAD PROFILE + LISTEN FOR PROFILE UPDATES
+  // =========================================================
+
+  useEffect(() => {
+    // Load profile when Sidebar first appears
+    loadProfile();
+
+    // Reload profile whenever Settings saves changes
+    const handleProfileUpdate = () => {
+      loadProfile();
     };
 
-    loadProfile();
+    window.addEventListener("profile-updated", handleProfileUpdate);
+
+    // Remove listener when Sidebar is unmounted
+    return () => {
+      window.removeEventListener(
+        "profile-updated",
+        handleProfileUpdate
+      );
+    };
   }, []);
 
   // =========================================================
@@ -230,7 +258,7 @@ export default function Sidebar() {
           >
             <circle cx="12" cy="12" r="3" />
 
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l-.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
           </svg>
 
           Settings

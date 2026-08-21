@@ -32,7 +32,8 @@ export async function fetchRSS(
       extract(item, "guid");
 
     const description =
-      extract(item, "description");
+      extract(item, "description") ||
+      extract(item, "content:encoded");
 
     const published =
       extract(item, "pubDate") ||
@@ -40,6 +41,17 @@ export async function fetchRSS(
       extract(item, "updated");
 
     if (!title || !url) continue;
+
+    /*
+     * =====================================================
+     * IMAGE
+     * =====================================================
+     *
+     * RSS feeds store images in several different ways.
+     * Check the most common formats.
+     */
+
+    const image_url = extractImage(item);
 
     articles.push({
       title: cleanHTML(title),
@@ -50,7 +62,7 @@ export async function fetchRSS(
         ? cleanHTML(description)
         : null,
 
-      image_url: null,
+      image_url,
 
       published_at: published
         ? parsePublishedDate(published)
@@ -71,8 +83,13 @@ function extract(
   xml: string,
   tag: string
 ): string | null {
+  const escapedTag = tag.replace(
+    /[-/\\^$*+?.()|[\]{}]/g,
+    "\\$&"
+  );
+
   const regex = new RegExp(
-    `<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>`,
+    `<${escapedTag}[^>]*>([\\s\\S]*?)<\\/${escapedTag}>`,
     "i"
   );
 
@@ -85,18 +102,267 @@ function extract(
 
 /*
  * =========================================================
+ * EXTRACT IMAGE
+ * =========================================================
+ *
+ * Supports common RSS image formats:
+ *
+ * 1. media:content
+ * 2. media:thumbnail
+ * 3. enclosure
+ * 4. <image><url>
+ * 5. <img src="..."> inside description/content
+ *
+ * =========================================================
+ */
+
+function extractImage(
+  item: string
+): string | null {
+
+  /*
+   * -------------------------------------------------------
+   * 1. media:content
+   * -------------------------------------------------------
+   */
+
+  const mediaContent =
+    extractAttribute(
+      item,
+      "media:content",
+      "url"
+    );
+
+  if (
+    mediaContent &&
+    isImageUrl(mediaContent)
+  ) {
+    return mediaContent;
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 2. media:thumbnail
+   * -------------------------------------------------------
+   */
+
+  const mediaThumbnail =
+    extractAttribute(
+      item,
+      "media:thumbnail",
+      "url"
+    );
+
+  if (
+    mediaThumbnail &&
+    isImageUrl(mediaThumbnail)
+  ) {
+    return mediaThumbnail;
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 3. enclosure
+   * -------------------------------------------------------
+   */
+
+  const enclosureUrl =
+    extractAttribute(
+      item,
+      "enclosure",
+      "url"
+    );
+
+  const enclosureType =
+    extractAttribute(
+      item,
+      "enclosure",
+      "type"
+    );
+
+  if (
+    enclosureUrl &&
+    (
+      enclosureType?.toLowerCase().startsWith("image/") ||
+      isImageUrl(enclosureUrl)
+    )
+  ) {
+    return enclosureUrl;
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 4. <image><url>
+   * -------------------------------------------------------
+   */
+
+  const imageBlock =
+    extract(item, "image");
+
+  if (imageBlock) {
+    const imageUrl =
+      extract(imageBlock, "url");
+
+    if (
+      imageUrl &&
+      isImageUrl(imageUrl)
+    ) {
+      return imageUrl;
+    }
+  }
+
+  /*
+   * -------------------------------------------------------
+   * 5. Image embedded in description/content
+   * -------------------------------------------------------
+   */
+
+  const content =
+    extract(item, "description") ||
+    extract(item, "content:encoded");
+
+  if (content) {
+    const imageFromHTML =
+      extractImageFromHTML(content);
+
+    if (imageFromHTML) {
+      return imageFromHTML;
+    }
+  }
+
+  /*
+   * -------------------------------------------------------
+   * No image found
+   * -------------------------------------------------------
+   */
+
+  return null;
+}
+
+/*
+ * =========================================================
+ * EXTRACT ATTRIBUTE
+ * =========================================================
+ */
+
+function extractAttribute(
+  xml: string,
+  tag: string,
+  attribute: string
+): string | null {
+
+  const escapedTag = tag.replace(
+    /[-/\\^$*+?.()|[\]{}]/g,
+    "\\$&"
+  );
+
+  const escapedAttribute = attribute.replace(
+    /[-/\\^$*+?.()|[\]{}]/g,
+    "\\$&"
+  );
+
+  const regex = new RegExp(
+    `<${escapedTag}\\b[^>]*\\b${escapedAttribute}\\s*=\\s*["']([^"']+)["']`,
+    "i"
+  );
+
+  const match = xml.match(regex);
+
+  return match
+    ? decode(match[1].trim())
+    : null;
+}
+
+/*
+ * =========================================================
+ * EXTRACT IMAGE FROM HTML
+ * =========================================================
+ */
+
+function extractImageFromHTML(
+  html: string
+): string | null {
+
+  /*
+   * Look for:
+   *
+   * <img src="...">
+   */
+
+  const imgRegex =
+    /<img\b[^>]*\bsrc\s*=\s*["']([^"']+)["']/i;
+
+  const imgMatch =
+    html.match(imgRegex);
+
+  if (imgMatch?.[1]) {
+    const imageUrl =
+      decode(imgMatch[1].trim());
+
+    if (isImageUrl(imageUrl)) {
+      return imageUrl;
+    }
+
+    /*
+     * Some valid image URLs don't end with
+     * .jpg/.png/etc because they contain query
+     * parameters or are generated dynamically.
+     *
+     * If it is a normal HTTP URL, still accept it.
+     */
+
+    if (
+      imageUrl.startsWith("http://") ||
+      imageUrl.startsWith("https://")
+    ) {
+      return imageUrl;
+    }
+  }
+
+  return null;
+}
+
+/*
+ * =========================================================
+ * CHECK IMAGE URL
+ * =========================================================
+ */
+
+function isImageUrl(
+  url: string
+): boolean {
+
+  const cleaned =
+    url
+      .trim()
+      .toLowerCase();
+
+  return (
+    cleaned.startsWith("http://") ||
+    cleaned.startsWith("https://")
+  );
+}
+
+/*
+ * =========================================================
  * CLEAN HTML
  * =========================================================
  */
 
-function cleanHTML(value: string): string {
+function cleanHTML(
+  value: string
+): string {
+
   return decode(
     value
       .replace(
         /<!\[CDATA\[([\s\S]*?)\]\]>/g,
         "$1"
       )
-      .replace(/<[^>]*>/g, "")
+      .replace(
+        /<[^>]*>/g,
+        ""
+      )
       .trim()
   );
 }
@@ -104,23 +370,22 @@ function cleanHTML(value: string): string {
 /*
  * =========================================================
  * DECODE HTML ENTITIES
+ * =========================================================
  *
- * Handles both named entities and numeric entities.
+ * Handles:
  *
- * Examples:
+ * Named entities
+ * Numeric decimal entities
+ * Numeric hexadecimal entities
+ * Double-encoded entities
  *
- * &#8216;  -> ‘
- * &#8217;  -> ’
- * &#8220;  -> “
- * &#8221;  -> ”
- * &#8211;  -> –
- * &#8212;  -> —
- * &#8230;  -> …
- * &amp;    -> &
  * =========================================================
  */
 
-function decode(value: string): string {
+function decode(
+  value: string
+): string {
+
   let decoded = value;
 
   /*
@@ -146,7 +411,9 @@ function decode(value: string): string {
   decoded = decoded.replace(
     /&#(\d+);/g,
     (_match, code) => {
-      const number = Number(code);
+
+      const number =
+        Number(code);
 
       if (
         Number.isNaN(number) ||
@@ -157,7 +424,9 @@ function decode(value: string): string {
       }
 
       try {
-        return String.fromCodePoint(number);
+        return String.fromCodePoint(
+          number
+        );
       } catch {
         return _match;
       }
@@ -174,7 +443,9 @@ function decode(value: string): string {
   decoded = decoded.replace(
     /&#x([0-9a-f]+);/gi,
     (_match, code) => {
-      const number = parseInt(code, 16);
+
+      const number =
+        parseInt(code, 16);
 
       if (
         Number.isNaN(number) ||
@@ -185,7 +456,9 @@ function decode(value: string): string {
       }
 
       try {
-        return String.fromCodePoint(number);
+        return String.fromCodePoint(
+          number
+        );
       } catch {
         return _match;
       }
@@ -204,8 +477,6 @@ function decode(value: string): string {
    *
    * Second pass:
    * ’
-   *
-   * Run the named entity replacement again.
    */
 
   decoded = decoded
@@ -218,14 +489,15 @@ function decode(value: string): string {
     .replace(/&gt;/gi, ">");
 
   /*
-   * Decode numeric entities again in case the feed
-   * double-encoded them.
+   * Decode numeric entities again.
    */
 
   decoded = decoded.replace(
     /&#(\d+);/g,
     (_match, code) => {
-      const number = Number(code);
+
+      const number =
+        Number(code);
 
       if (
         Number.isNaN(number) ||
@@ -236,7 +508,9 @@ function decode(value: string): string {
       }
 
       try {
-        return String.fromCodePoint(number);
+        return String.fromCodePoint(
+          number
+        );
       } catch {
         return _match;
       }
@@ -246,7 +520,9 @@ function decode(value: string): string {
   decoded = decoded.replace(
     /&#x([0-9a-f]+);/gi,
     (_match, code) => {
-      const number = parseInt(code, 16);
+
+      const number =
+        parseInt(code, 16);
 
       if (
         Number.isNaN(number) ||
@@ -257,7 +533,9 @@ function decode(value: string): string {
       }
 
       try {
-        return String.fromCodePoint(number);
+        return String.fromCodePoint(
+          number
+        );
       } catch {
         return _match;
       }
@@ -282,9 +560,15 @@ function decode(value: string): string {
 function parsePublishedDate(
   value: string
 ): string | null {
-  const date = new Date(value);
 
-  if (Number.isNaN(date.getTime())) {
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
     return null;
   }
 

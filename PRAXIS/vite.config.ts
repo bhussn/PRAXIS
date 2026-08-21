@@ -5,6 +5,8 @@ import path from 'node:path'
 
 import siteConfiguration from './.figma/make/site.json'
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // .figma/make/deploy-preview passes `--mode development` for cached-preview builds.
@@ -23,6 +25,7 @@ export default defineConfig(({ mode }) => {
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
       figmaMakeKitPlugin({ storiesGlob: '/src/**/*.stories.{ts,tsx,js,jsx}' }),
+      cloudflare()
     ],
     resolve: {
       alias: {
@@ -39,7 +42,7 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
     },
-  }
+  };
 })
 
 type FigmaSiteConfiguration = {

@@ -11,6 +11,7 @@ const MAX_SOURCES_PER_RUN = 8;
 interface AnalysisRequestBody {
   user_id: string;
   profile: Record<string, unknown>;
+
   article: {
     id: number;
     title: string;
@@ -26,7 +27,8 @@ interface AnalysisRequestBody {
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+  "Access-Control-Allow-Headers":
+    "Content-Type, Authorization",
   "Content-Type": "application/json",
 };
 
@@ -65,7 +67,9 @@ export default {
         url.pathname === "/analyze" &&
         request.method === "POST"
       ) {
-        console.log("Received /analyze request");
+        console.log(
+          "Received /analyze request"
+        );
 
         const body =
           (await request.json()) as AnalysisRequestBody;
@@ -133,26 +137,38 @@ export default {
         // SAVE ANALYSIS
         // ==========================================================
 
-        const supabase = getSupabase(env);
+        const supabase =
+          getSupabase(env);
 
         console.log(
           `Saving analysis for article ${body.article.id} and user ${body.user_id}`
         );
 
         const analysisData = {
-          article_id: body.article.id,
-          user_id: body.user_id,
-          summary: result.summary,
-          plain_english: result.plain_english,
-          why_it_matters: result.why_it_matters,
+          article_id:
+            body.article.id,
+
+          user_id:
+            body.user_id,
+
+          summary:
+            result.summary,
+
+          plain_english:
+            result.plain_english,
+
+          why_it_matters:
+            result.why_it_matters,
+
           what_it_means_for_you:
             result.what_it_means_for_you,
-          key_takeaway: result.key_takeaway,
+
+          key_takeaway:
+            result.key_takeaway,
         };
 
         // ----------------------------------------------------------
         // Check whether this user already has an analysis
-        // for this article.
         // ----------------------------------------------------------
 
         const {
@@ -271,10 +287,6 @@ export default {
           `Successfully saved analysis for article ${body.article.id}`
         );
 
-        // ----------------------------------------------------------
-        // Return saved database row
-        // ----------------------------------------------------------
-
         return new Response(
           JSON.stringify(savedAnalysis),
           {
@@ -295,7 +307,8 @@ export default {
         {
           status: 200,
           headers: {
-            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Origin":
+              "*",
           },
         }
       );
@@ -325,8 +338,11 @@ export default {
 // DAILY PRAXIS PIPELINE
 // ============================================================
 
-async function runPipeline(env: Env) {
-  const supabase = getSupabase(env);
+async function runPipeline(
+  env: Env
+) {
+  const supabase =
+    getSupabase(env);
 
   console.log(
     "Starting PRAXIS pipeline"
@@ -394,37 +410,98 @@ async function runPipeline(env: Env) {
               MAX_ARTICLES_PER_SOURCE
             );
 
+          // ======================================================
+          // CATEGORY
+          // ======================================================
+
+          const sourceInterest =
+            source.interests as unknown as
+              | {
+                  id: number;
+                  name: string;
+                }
+              | null;
+
+          const categoryName =
+            sourceInterest?.name ??
+            null;
+
+          console.log(
+            `${source.name} -> category: ${categoryName}`
+          );
+
+          // ======================================================
+          // BUILD ARTICLE ROWS
+          // ======================================================
+
           const rows =
             limitedArticles.map(
               (article) => ({
-                title: article.title,
-                source: source.name,
-                url: article.url,
+                title:
+                  article.title,
+
+                source:
+                  source.name,
+
+                url:
+                  article.url,
+
                 description:
                   article.description,
+
                 image_url:
                   article.image_url,
+
                 category:
-                  source.interests?.[0]
-                    ?.name ?? null,
+                  categoryName,
+
                 published_at:
                   article.published_at,
               })
             );
 
-          if (rows.length > 0) {
+          // ======================================================
+          // SAVE ARTICLES TO SUPABASE
+          // ======================================================
+
+          if (
+            rows.length > 0
+          ) {
             const {
+              data: savedRows,
               error: saveError,
             } = await supabase
               .from("articles")
               .upsert(rows, {
-                onConflict: "url",
-                ignoreDuplicates: true,
-              });
+                onConflict:
+                  "url",
+              })
+              .select(`
+                id,
+                source,
+                url,
+                category,
+                image_url
+              `);
 
             if (saveError) {
+              console.error(
+                `Failed saving ${source.name}:`,
+                saveError
+              );
+
               throw saveError;
             }
+
+            console.log(
+              `${source.name} SAVED ROW DEBUG:`,
+              JSON.stringify(
+                (
+                  savedRows ??
+                  []
+                ).slice(0, 3)
+              )
+            );
           }
 
           console.log(
@@ -448,7 +525,8 @@ async function runPipeline(env: Env) {
   // 3. DETERMINE YESTERDAY
   // ==========================================================
 
-  const yesterday = new Date();
+  const yesterday =
+    new Date();
 
   yesterday.setUTCDate(
     yesterday.getUTCDate() - 1
@@ -467,7 +545,9 @@ async function runPipeline(env: Env) {
     `${date}T00:00:00.000Z`;
 
   const endDate =
-    new Date(yesterday);
+    new Date(
+      `${date}T00:00:00.000Z`
+    );
 
   endDate.setUTCDate(
     endDate.getUTCDate() + 1
@@ -511,6 +591,51 @@ async function runPipeline(env: Env) {
   );
 
   // ==========================================================
+  // DEBUG ARTICLE CATEGORIES
+  // ==========================================================
+
+  console.log(
+    "ARTICLE CATEGORY DEBUG:",
+    JSON.stringify(
+      (
+        articles ??
+        []
+      )
+        .slice(0, 20)
+        .map(
+          (article) => ({
+            id:
+              article.id,
+
+            source:
+              article.source,
+
+            category:
+              article.category,
+
+            published_at:
+              article.published_at,
+          })
+        )
+    )
+  );
+
+  console.log(
+    "UNIQUE CATEGORIES:",
+    [
+      ...new Set(
+        (
+          articles ??
+          []
+        ).map(
+          (article) =>
+            article.category
+        )
+      ),
+    ]
+  );
+
+  // ==========================================================
   // 5. GET INTERESTS
   // ==========================================================
 
@@ -519,7 +644,9 @@ async function runPipeline(env: Env) {
     error: interestError,
   } = await supabase
     .from("interests")
-    .select("id, name");
+    .select(
+      "id, name"
+    );
 
   if (interestError) {
     throw interestError;
@@ -551,7 +678,10 @@ async function runPipeline(env: Env) {
     (interests ?? []).map(
       async (interest) => {
         const candidates =
-          (articles ?? []).filter(
+          (
+            articles ??
+            []
+          ).filter(
             (article) =>
               article.category ===
               interest.name
@@ -614,7 +744,9 @@ async function runPipeline(env: Env) {
           const {
             error: dailyError,
           } = await supabase
-            .from("daily_articles")
+            .from(
+              "daily_articles"
+            )
             .insert(rows);
 
           if (dailyError) {

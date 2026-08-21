@@ -292,6 +292,8 @@ export default function Settings() {
 
       setSaved(true);
 
+      window.dispatchEvent(new Event("profile-updated"));
+
       setTimeout(() => {
         setSaved(false);
       }, 2000);
