@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Logo from "@/components/Logo";
+import { supabase } from "@/lib/supabase";
 
 function PasswordStrength({ password }: { password: string }) {
   const checks = [
@@ -33,25 +34,40 @@ export default function Signup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // AUTH: REPLACE THIS — connect to Supabase Auth signUp
+  // AUTH: connect to Supabase Auth signUp
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
     if (!email || !password || !confirm) {
       setError("Please fill in all fields.");
       return;
     }
+
     if (password !== confirm) {
       setError("Passwords don't match.");
       return;
     }
+
     if (password.length < 8) {
       setError("Password must be at least 8 characters.");
       return;
     }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
     setLoading(false);
+
+    if (error) {
+      setError(error.message);
+      return;
+    }
+
     navigate("/onboarding");
   };
 

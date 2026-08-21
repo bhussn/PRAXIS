@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Logo from "@/components/Logo";
+import { supabase } from "@/lib/supabase";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -9,17 +10,30 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // AUTH: REPLACE THIS — connect to Supabase Auth signInWithPassword
+  // AUTH: connect to Supabase Auth signInWithPassword
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
     if (!email || !password) {
       setError("Please fill in all fields.");
       return;
     }
+
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 1000));
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
     setLoading(false);
+
+    if (error) {
+      setError("Invalid email or password.");
+      return;
+    }
+
     navigate("/brief");
   };
 
