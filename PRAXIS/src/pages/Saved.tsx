@@ -1,9 +1,7 @@
 import { useEffect, useState } from "react";
-
 import { Link } from "react-router-dom";
 
 import ArticleCard from "@/components/ArticleCard";
-
 import { supabase } from "@/lib/supabase";
 
 type Article = {
@@ -20,157 +18,261 @@ type Article = {
 };
 
 export default function Saved() {
-  const [savedArticles, setSavedArticles] = useState<Article[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [savedArticles, setSavedArticles] =
+    useState<Article[]>([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
 
   useEffect(() => {
-    const loadSavedArticles = async () => {
-      setLoading(true);
-      setError("");
+    const loadSavedArticles =
+      async () => {
+        setLoading(true);
+        setError("");
 
-      try {
-        // =====================================================
-        // 1. GET LOGGED-IN USER
-        // =====================================================
+        try {
+          // =====================================================
+          // 1. GET LOGGED-IN USER
+          // =====================================================
 
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+          const {
+            data: { user },
+            error: userError,
+          } =
+            await supabase.auth.getUser();
 
-        if (userError) {
-          throw userError;
-        }
-
-        if (!user) {
-          throw new Error(
-            "You must be logged in to view your saved articles."
-          );
-        }
-
-        console.log("=================================");
-        console.log("PRAXIS SAVED — USER");
-        console.log("=================================");
-        console.log(user.id);
-
-        // =====================================================
-        // 2. GET SAVED ARTICLE IDS
-        // =====================================================
-
-        const {
-          data: savedData,
-          error: savedError,
-        } = await supabase
-          .from("saved_articles")
-          .select("article_id, created_at")
-          .eq("user_id", user.id)
-          .order("created_at", {
-            ascending: false,
-          });
-
-        if (savedError) {
-          throw savedError;
-        }
-
-        console.log("=================================");
-        console.log("PRAXIS SAVED — SAVED ARTICLES");
-        console.log("=================================");
-        console.log(savedData);
-
-        if (!savedData || savedData.length === 0) {
-          setSavedArticles([]);
-          return;
-        }
-
-        // =====================================================
-        // 3. GET ARTICLE IDS
-        // =====================================================
-
-        const articleIds = savedData.map(
-          (item) => item.article_id
-        );
-
-        console.log("Saved article IDs:", articleIds);
-
-        // =====================================================
-        // 4. GET ACTUAL ARTICLES
-        // =====================================================
-
-        const {
-          data: articles,
-          error: articlesError,
-        } = await supabase
-          .from("articles")
-          .select(`
-            id,
-            title,
-            source,
-            url,
-            image_url,
-            description,
-            category,
-            topics,
-            published_at,
-            created_at
-          `)
-          .in("id", articleIds);
-
-        if (articlesError) {
-          throw articlesError;
-        }
-
-        console.log("=================================");
-        console.log("PRAXIS SAVED — ARTICLES");
-        console.log("=================================");
-        console.log(articles);
-
-        if (!articles || articles.length === 0) {
-          setSavedArticles([]);
-          return;
-        }
-
-        // =====================================================
-        // 5. RESTORE SAVED ORDER
-        // =====================================================
-
-        const articleMap = new Map<number, Article>();
-
-        articles.forEach((article) => {
-          articleMap.set(article.id, article as Article);
-        });
-
-        const orderedArticles: Article[] = [];
-
-        savedData.forEach((saved) => {
-          const article = articleMap.get(saved.article_id);
-
-          if (article) {
-            orderedArticles.push(article);
+          if (userError) {
+            throw userError;
           }
-        });
 
-        console.log("=================================");
-        console.log("PRAXIS SAVED — FINAL");
-        console.log("=================================");
-        console.log(orderedArticles);
+          if (!user) {
+            throw new Error(
+              "You must be logged in to view your saved articles."
+            );
+          }
 
-        setSavedArticles(orderedArticles);
-      } catch (error) {
-        console.error("=================================");
-        console.error("PRAXIS SAVED ERROR");
-        console.error("=================================");
-        console.error(error);
+          console.log(
+            "================================="
+          );
+          console.log(
+            "PRAXIS SAVED — USER"
+          );
+          console.log(
+            "================================="
+          );
+          console.log(user.id);
 
-        if (error instanceof Error) {
-          setError(error.message);
-        } else {
-          setError("Could not load your saved articles.");
+          // =====================================================
+          // 2. GET SAVED ARTICLE IDS
+          // =====================================================
+
+          const {
+            data: savedData,
+            error: savedError,
+          } = await supabase
+            .from("saved_articles")
+            .select(
+              "article_id, created_at"
+            )
+            .eq(
+              "user_id",
+              user.id
+            )
+            .order(
+              "created_at",
+              {
+                ascending: false,
+              }
+            );
+
+          if (savedError) {
+            throw savedError;
+          }
+
+          console.log(
+            "================================="
+          );
+          console.log(
+            "PRAXIS SAVED — SAVED ARTICLES"
+          );
+          console.log(
+            "================================="
+          );
+          console.log(savedData);
+
+          if (
+            !savedData ||
+            savedData.length === 0
+          ) {
+            setSavedArticles([]);
+            return;
+          }
+
+          // =====================================================
+          // 3. GET ARTICLE IDS
+          // =====================================================
+
+          const articleIds =
+            savedData.map(
+              (item) =>
+                item.article_id
+            );
+
+          console.log(
+            "Saved article IDs:",
+            articleIds
+          );
+
+          // =====================================================
+          // 4. GET ACTUAL ARTICLES
+          // =====================================================
+
+          const {
+            data: articles,
+            error: articlesError,
+          } = await supabase
+            .from("articles")
+            .select(`
+              id,
+              title,
+              source,
+              url,
+              image_url,
+              description,
+              category,
+              topics,
+              published_at,
+              created_at
+            `)
+            .in(
+              "id",
+              articleIds
+            );
+
+          if (articlesError) {
+            throw articlesError;
+          }
+
+          console.log(
+            "================================="
+          );
+          console.log(
+            "PRAXIS SAVED — ARTICLES"
+          );
+          console.log(
+            "================================="
+          );
+          console.log(articles);
+
+          if (
+            !articles ||
+            articles.length === 0
+          ) {
+            setSavedArticles([]);
+            return;
+          }
+
+          // =====================================================
+          // IMAGE DEBUG
+          // =====================================================
+
+          console.log(
+            "PRAXIS SAVED IMAGE URLS:",
+            articles.map(
+              (article) => ({
+                id:
+                  article.id,
+                title:
+                  article.title,
+                image_url:
+                  article.image_url,
+              })
+            )
+          );
+
+          // =====================================================
+          // 5. RESTORE SAVED ORDER
+          // =====================================================
+
+          const articleMap =
+            new Map<
+              number,
+              Article
+            >();
+
+          articles.forEach(
+            (article) => {
+              articleMap.set(
+                article.id,
+                article as Article
+              );
+            }
+          );
+
+          const orderedArticles:
+            Article[] = [];
+
+          savedData.forEach(
+            (saved) => {
+              const article =
+                articleMap.get(
+                  saved.article_id
+                );
+
+              if (article) {
+                orderedArticles.push(
+                  article
+                );
+              }
+            }
+          );
+
+          console.log(
+            "================================="
+          );
+          console.log(
+            "PRAXIS SAVED — FINAL"
+          );
+          console.log(
+            "================================="
+          );
+          console.log(
+            orderedArticles
+          );
+
+          setSavedArticles(
+            orderedArticles
+          );
+        } catch (error) {
+          console.error(
+            "================================="
+          );
+          console.error(
+            "PRAXIS SAVED ERROR"
+          );
+          console.error(
+            "================================="
+          );
+          console.error(error);
+
+          if (
+            error instanceof Error
+          ) {
+            setError(
+              error.message
+            );
+          } else {
+            setError(
+              "Could not load your saved articles."
+            );
+          }
+        } finally {
+          setLoading(false);
         }
-      } finally {
-        setLoading(false);
-      }
-    };
+      };
 
     loadSavedArticles();
   }, []);
@@ -184,7 +286,8 @@ export default function Saved() {
       <div className="min-h-screen px-6 lg:px-10 py-8 max-w-5xl mx-auto">
         <div className="flex items-center justify-center min-h-[60vh]">
           <p className="text-sm text-[#8B82A0]">
-            Loading your saved articles...
+            Loading your saved
+            articles...
           </p>
         </div>
       </div>
@@ -214,7 +317,7 @@ export default function Saved() {
   return (
     <div className="min-h-screen px-6 lg:px-10 py-8 max-w-5xl mx-auto">
 
-      {/* Header */}
+      {/* HEADER */}
 
       <div className="mb-8 animate-fade-in">
         <h1 className="text-3xl font-black text-white mb-2">
@@ -222,13 +325,15 @@ export default function Saved() {
         </h1>
 
         <p className="text-sm text-[#8B82A0]">
-          Stories you want to come back to.
+          Stories you want to
+          come back to.
         </p>
       </div>
 
-      {/* Empty State */}
+      {/* EMPTY STATE */}
 
-      {savedArticles.length === 0 ? (
+      {savedArticles.length ===
+      0 ? (
         <div className="flex flex-col items-center justify-center py-24 text-center">
 
           <div className="w-16 h-16 rounded-2xl border border-[#1E1830] bg-[#120E1C] flex items-center justify-center mb-5">
@@ -251,7 +356,9 @@ export default function Saved() {
           </h2>
 
           <p className="text-sm text-[#8B82A0] max-w-xs mb-8 leading-relaxed">
-            When a story is worth coming back to, save it here.
+            When a story is
+            worth coming back
+            to, save it here.
           </p>
 
           <Link
@@ -273,14 +380,17 @@ export default function Saved() {
           </Link>
         </div>
       ) : (
-
-        /* Saved Articles */
-
         <>
+          {/* SAVED COUNT */}
+
           <div className="flex items-center gap-3 mb-6">
+
             <span className="font-mono text-xs text-[#4A4360]">
-              {savedArticles.length}{" "}
-              {savedArticles.length === 1
+              {
+                savedArticles.length
+              }{" "}
+              {savedArticles.length ===
+              1
                 ? "saved story"
                 : "saved stories"}
             </span>
@@ -288,40 +398,36 @@ export default function Saved() {
             <div className="flex-1 h-px bg-[#1E1830]" />
           </div>
 
+          {/* =================================================
+              SAVED ARTICLE CARDS
+
+              IMPORTANT:
+              Pass the ORIGINAL article object directly.
+
+              ArticleCard expects:
+              image_url
+              published_at
+              description
+              topics
+              etc.
+              ================================================= */}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {savedArticles.map((article) => (
-              <ArticleCard
-                key={article.id}
-                article={{
-                  id: String(article.id),
-                  title: article.title,
-                  category: article.category ?? "Technology",
-                  source: article.source,
-                  publishedAt: article.published_at
-                    ? new Date(
-                        article.published_at
-                      ).toLocaleDateString("en-US", {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })
-                    : "Recently",
 
-                  readingTime: "5 min read",
+            {savedArticles.map(
+              (article) => (
+                <ArticleCard
+                  key={
+                    article.id
+                  }
+                  article={
+                    article
+                  }
+                  variant="grid"
+                />
+              )
+            )}
 
-                  imageUrl:
-                    article.image_url ??
-                    "/placeholder-article.jpg",
-
-                  description:
-                    article.description ??
-                    "Read this story to learn more.",
-
-                  number: "",
-                }}
-                variant="grid"
-              />
-            ))}
           </div>
         </>
       )}

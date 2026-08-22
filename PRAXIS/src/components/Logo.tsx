@@ -1,9 +1,14 @@
+import { Link } from "react-router-dom";
+
 interface LogoProps {
   size?: "sm" | "md" | "lg";
   showWordmark?: boolean;
 }
 
-export default function Logo({ size = "md", showWordmark = true }: LogoProps) {
+export default function Logo({
+  size = "md",
+  showWordmark = true,
+}: LogoProps) {
   const sizes = {
     sm: { symbol: 24, text: "text-lg" },
     md: { symbol: 32, text: "text-xl" },
@@ -13,7 +18,11 @@ export default function Logo({ size = "md", showWordmark = true }: LogoProps) {
   const s = sizes[size];
 
   return (
-    <div className="flex items-center gap-2.5">
+    <Link
+      to="/brief"
+      aria-label="Go to Brief"
+      className="flex items-center gap-2.5 cursor-pointer"
+    >
       {/* Symbol: P as forward arrow */}
       <svg
         width={s.symbol}
@@ -23,18 +32,37 @@ export default function Logo({ size = "md", showWordmark = true }: LogoProps) {
         aria-hidden="true"
       >
         <defs>
-          <linearGradient id="logo-grad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#8B5CF6" />
-            <stop offset="100%" stopColor="#6D28D9" />
+          <linearGradient
+            id="logo-grad"
+            x1="0"
+            y1="0"
+            x2="1"
+            y2="1"
+          >
+            <stop
+              offset="0%"
+              stopColor="#8B5CF6"
+            />
+
+            <stop
+              offset="100%"
+              stopColor="#6D28D9"
+            />
           </linearGradient>
+
           <filter id="logo-glow">
-            <feGaussianBlur stdDeviation="1.5" result="blur" />
+            <feGaussianBlur
+              stdDeviation="1.5"
+              result="blur"
+            />
+
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
         </defs>
+
         {/* Vertical stem of P */}
         <rect
           x="5"
@@ -45,17 +73,20 @@ export default function Logo({ size = "md", showWordmark = true }: LogoProps) {
           fill="url(#logo-grad)"
           filter="url(#logo-glow)"
         />
+
         {/* Bowl of P / forward arrow */}
         <path
           d="M9 4 L24 4 L28 10 L24 16 L9 16"
           fill="url(#logo-grad)"
           filter="url(#logo-glow)"
         />
+
         {/* Arrow cutout - inner bowl */}
         <path
           d="M11 7 L21 7 L24 10 L21 13 L11 13"
           fill="#08060D"
         />
+
         {/* Forward arrow tip */}
         <path
           d="M22 18 L28 10 L28 16 L28 10 L22 18 Z"
@@ -67,11 +98,14 @@ export default function Logo({ size = "md", showWordmark = true }: LogoProps) {
       {showWordmark && (
         <span
           className={`font-bold tracking-tight ${s.text} text-white`}
-          style={{ letterSpacing: "-0.02em", fontFamily: "Inter, sans-serif" }}
+          style={{
+            letterSpacing: "-0.02em",
+            fontFamily: "Inter, sans-serif",
+          }}
         >
           PRAXIS
         </span>
       )}
-    </div>
+    </Link>
   );
 }
