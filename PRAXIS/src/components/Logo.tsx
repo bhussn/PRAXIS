@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 interface LogoProps {
   size?: "sm" | "md" | "lg";
@@ -9,6 +9,8 @@ export default function Logo({
   size = "md",
   showWordmark = true,
 }: LogoProps) {
+  const location = useLocation();
+
   const sizes = {
     sm: { symbol: 24, text: "text-lg" },
     md: { symbol: 32, text: "text-xl" },
@@ -17,13 +19,20 @@ export default function Logo({
 
   const s = sizes[size];
 
-  return (
-    <Link
-      to="/brief"
-      aria-label="Go to Brief"
-      className="flex items-center gap-2.5 cursor-pointer"
-    >
-      {/* Symbol: P as forward arrow */}
+  // Logo is clickable only inside the logged-in app
+  const clickableRoutes = [
+    "/brief",
+    "/articles",
+    "/saved",
+    "/settings",
+  ];
+
+  const isClickable = clickableRoutes.some((route) =>
+    location.pathname.startsWith(route)
+  );
+
+  const logoContent = (
+    <>
       <svg
         width={s.symbol}
         height={s.symbol}
@@ -39,15 +48,8 @@ export default function Logo({
             x2="1"
             y2="1"
           >
-            <stop
-              offset="0%"
-              stopColor="#8B5CF6"
-            />
-
-            <stop
-              offset="100%"
-              stopColor="#6D28D9"
-            />
+            <stop offset="0%" stopColor="#8B5CF6" />
+            <stop offset="100%" stopColor="#6D28D9" />
           </linearGradient>
 
           <filter id="logo-glow">
@@ -63,7 +65,6 @@ export default function Logo({
           </filter>
         </defs>
 
-        {/* Vertical stem of P */}
         <rect
           x="5"
           y="4"
@@ -74,20 +75,17 @@ export default function Logo({
           filter="url(#logo-glow)"
         />
 
-        {/* Bowl of P / forward arrow */}
         <path
           d="M9 4 L24 4 L28 10 L24 16 L9 16"
           fill="url(#logo-grad)"
           filter="url(#logo-glow)"
         />
 
-        {/* Arrow cutout - inner bowl */}
         <path
           d="M11 7 L21 7 L24 10 L21 13 L11 13"
           fill="#08060D"
         />
 
-        {/* Forward arrow tip */}
         <path
           d="M22 18 L28 10 L28 16 L28 10 L22 18 Z"
           fill="url(#logo-grad)"
@@ -106,6 +104,26 @@ export default function Logo({
           PRAXIS
         </span>
       )}
-    </Link>
+    </>
+  );
+
+  // Logged-in pages -> clickable and returns to Brief
+  if (isClickable) {
+    return (
+      <Link
+        to="/brief"
+        aria-label="Go to Brief"
+        className="flex items-center gap-2.5 cursor-pointer"
+      >
+        {logoContent}
+      </Link>
+    );
+  }
+
+  // Login / signup / onboarding -> not clickable
+  return (
+    <div className="flex items-center gap-2.5">
+      {logoContent}
+    </div>
   );
 }
