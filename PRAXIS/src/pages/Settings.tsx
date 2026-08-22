@@ -531,12 +531,6 @@ export default function Settings() {
           <div className="space-y-2">
 
             <button
-              className="w-full text-left px-4 py-3 rounded-xl border border-[#1E1830] text-[#8B82A0] hover:text-white hover:border-[#2D2548] text-sm font-medium transition-all"
-            >
-              Change password
-            </button>
-
-            <button
               onClick={handleSignOut}
               className="w-full text-left px-4 py-3 rounded-xl border border-[#1E1830] text-[#8B82A0] hover:text-white hover:border-[#2D2548] text-sm font-medium transition-all"
             >
