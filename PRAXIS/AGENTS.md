@@ -1,6 +1,6 @@
-# figma-make-app
+# Praxis
 
-React + Vite + Tailwind CSS project running inside Figma Make.
+React + Vite + Tailwind CSS project for the Praxis app.
 
 ## Development Server
 
